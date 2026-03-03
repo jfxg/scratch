@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# sync-shell-remote: Compare local shell configs with a remote host and sync as needed.
+# Defaults to dry-run. Pass --apply to write changes to the remote host.
+#
+# Usage: sync-shell-remote [--apply] [user@]host
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(dirname "$SCRIPT_DIR")"
+DRY_RUN=true
+HOST=""
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+for arg in "$@"; do
+    case "$arg" in
+        --apply) DRY_RUN=false ;;
+        --help|-h)
+            echo "Usage: $(basename "$0") [--apply] [user@]host"
+            echo ""
+            echo "  Compares local shell configs with a remote host and shows differences."
+            echo "  --apply   Sync changes to the remote host (default is dry-run)"
+            exit 0
+            ;;
+        -*) echo "Unknown option: $arg" >&2; exit 1 ;;
+        *)  HOST="$arg" ;;
+    esac
+done
+
+if [[ -z "$HOST" ]]; then
+    echo "Error: host is required." >&2
+    echo "Usage: $(basename "$0") [--apply] [user@]host" >&2
+    exit 1
+fi
+
+# ── Colour helpers ────────────────────────────────────────────────────────────
+green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
+blue()   { printf '\033[0;34m%s\033[0m\n' "$*"; }
+red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
+dim()    { printf '\033[2m%s\033[0m\n'    "$*"; }
+
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10)
+TMPDIR_WORK="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_WORK"' EXIT
+
+CHANGES=0
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+# check_file <local_src> <remote_dest>
+# Fetches the remote file via SCP into a temp location, diffs, and optionally
+# SCPs the local version back.
+check_file() {
+    local src="$1"          # local repo file
+    local remote_dest="$2"  # path on remote host (~ is expanded by the shell there)
+
+    if [[ ! -f "$src" ]]; then
+        dim "  skip     ${src#$REPO/} (not in repo)"
+        return
+    fi
+
+    local tmpfile="$TMPDIR_WORK/$(echo "$remote_dest" | tr '/' '_')"
+
+    if ! scp -q "${SSH_OPTS[@]}" "$HOST:$remote_dest" "$tmpfile" 2>/dev/null; then
+        # File does not exist on remote
+        yellow "  MISSING  $HOST:$remote_dest"
+        CHANGES=$((CHANGES + 1))
+        if [[ "$DRY_RUN" == false ]]; then
+            local remote_dir
+            remote_dir="$(dirname "$remote_dest")"
+            ssh "${SSH_OPTS[@]}" "$HOST" "mkdir -p $remote_dir"
+            scp -q "${SSH_OPTS[@]}" "$src" "$HOST:$remote_dest"
+            green "           → created"
+        fi
+        return
+    fi
+
+    if ! diff -q "$src" "$tmpfile" > /dev/null 2>&1; then
+        yellow "  CHANGED  $HOST:$remote_dest"
+        # Show a readable unified diff (remote as "before", local as "after")
+        diff --unified=3 "$tmpfile" "$src" | tail -n +3 | \
+            sed $'s/^+/\t\033[0;32m+\033[0m/
+                  s/^-/\t\033[0;31m-\033[0m/
+                  s/^@/\t\033[2m@\033[0m/' || true
+        CHANGES=$((CHANGES + 1))
+        if [[ "$DRY_RUN" == false ]]; then
+            scp -q "${SSH_OPTS[@]}" "$src" "$HOST:$remote_dest"
+            green "           → updated"
+        fi
+    else
+        green "  ok       $HOST:$remote_dest"
+    fi
+}
+
+# check_dir <local_src_dir> <remote_dest_dir>
+check_dir() {
+    local src_dir="$1"
+    local remote_dir="$2"
+
+    if [[ ! -d "$src_dir" ]]; then
+        dim "  skip     ${src_dir#$REPO/} (not in repo)"
+        return
+    fi
+
+    while IFS= read -r -d '' file; do
+        local rel="${file#$src_dir/}"
+        check_file "$file" "$remote_dir/$rel"
+    done < <(find "$src_dir" -type f -print0)
+}
+
+# ── Connectivity check ────────────────────────────────────────────────────────
+echo ""
+if [[ "$DRY_RUN" == true ]]; then
+    blue "==> Dry run — comparing shell configs with $HOST (pass --apply to sync)"
+else
+    blue "==> Syncing shell configs to $HOST"
+fi
+echo ""
+
+printf 'Connecting to %s ... ' "$HOST"
+if ! ssh "${SSH_OPTS[@]}" "$HOST" true 2>/dev/null; then
+    red "failed"
+    echo "Cannot connect to $HOST" >&2
+    exit 1
+fi
+echo "ok"
+
+printf 'Checking for zsh on %s ... ' "$HOST"
+ZSH_PATH="$(ssh "${SSH_OPTS[@]}" "$HOST" "command -v zsh" 2>/dev/null || true)"
+if [[ -z "$ZSH_PATH" ]]; then
+    yellow "not installed"
+    if [[ "$DRY_RUN" == false ]]; then
+        blue "Installing zsh on $HOST ..."
+        # Detect package manager, install zsh, and set as default shell in one TTY session
+        ssh -tt "${SSH_OPTS[@]}" "$HOST" "
+            if command -v apt-get > /dev/null 2>&1; then
+                sudo apt-get install -y zsh
+            elif command -v dnf > /dev/null 2>&1; then
+                sudo dnf install -y zsh
+            elif command -v yum > /dev/null 2>&1; then
+                sudo yum install -y zsh
+            elif command -v brew > /dev/null 2>&1; then
+                brew install zsh
+            else
+                echo 'No supported package manager found (apt/dnf/yum/brew).' >&2
+                exit 1
+            fi
+            chsh -s \$(command -v zsh)
+        "
+        ZSH_PATH="$(ssh "${SSH_OPTS[@]}" "$HOST" "command -v zsh")"
+        green "zsh installed and set as default shell at $ZSH_PATH"
+    else
+        yellow "  (would install zsh and set as default shell with --apply)"
+    fi
+else
+    echo "$ZSH_PATH"
+    # Check whether zsh is already the default shell
+    printf 'Checking default shell on %s ... ' "$HOST"
+    REMOTE_SHELL="$(ssh "${SSH_OPTS[@]}" "$HOST" 'echo $SHELL')"
+    if [[ "$REMOTE_SHELL" == *"zsh" ]]; then
+        green "$REMOTE_SHELL"
+    else
+        yellow "$REMOTE_SHELL (not zsh)"
+        if [[ "$DRY_RUN" == false ]]; then
+            ssh -tt "${SSH_OPTS[@]}" "$HOST" "chsh -s $ZSH_PATH"
+            green "Default shell changed to $ZSH_PATH"
+        else
+            yellow "  (would set default shell to $ZSH_PATH with --apply)"
+        fi
+    fi
+fi
+echo ""
+
+# ── oh-my-zsh installation ────────────────────────────────────────────────────
+printf 'Checking for oh-my-zsh on %s ... ' "$HOST"
+if ssh "${SSH_OPTS[@]}" "$HOST" "test -f ~/.oh-my-zsh/oh-my-zsh.sh" 2>/dev/null; then
+    green "found"
+else
+    yellow "not installed"
+    if [[ "$DRY_RUN" == false ]]; then
+        blue "Installing oh-my-zsh on $HOST ..."
+        ssh "${SSH_OPTS[@]}" "$HOST" \
+            'rm -rf ~/.oh-my-zsh && sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
+        green "oh-my-zsh installed"
+    else
+        yellow "  (would install oh-my-zsh with --apply)"
+    fi
+fi
+echo ""
+
+# ── Shell configs ─────────────────────────────────────────────────────────────
+blue "-- Shell --"
+check_file "$REPO/shell/.zshrc"    "~/.zshrc"
+check_file "$REPO/shell/.zprofile" "~/.zprofile"
+
+blue "-- oh-my-zsh custom themes --"
+check_dir "$REPO/shell/oh-my-zsh/custom/themes" "~/.oh-my-zsh/custom/themes"
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+echo ""
+if [[ $CHANGES -eq 0 ]]; then
+    green "==> $HOST is up to date."
+elif [[ "$DRY_RUN" == true ]]; then
+    yellow "==> $CHANGES difference(s) found. Run with --apply to sync to $HOST."
+else
+    green "==> $CHANGES change(s) synced to $HOST."
+fi
+echo ""
