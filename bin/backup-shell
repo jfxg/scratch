@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# backup-shell: Copy important shell configs and dotfiles into this scratch repo
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(dirname "$SCRIPT_DIR")"
+HOME_DIR="$HOME"
+
+# Colour helpers
+green() { printf '\033[0;32m%s\033[0m\n' "$*"; }
+blue()  { printf '\033[0;34m%s\033[0m\n' "$*"; }
+red()   { printf '\033[0;31m%s\033[0m\n' "$*"; }
+
+copy_file() {
+    local src="$1"
+    local dest="$2"
+    mkdir -p "$(dirname "$dest")"
+    if [[ -f "$src" ]]; then
+        cp "$src" "$dest"
+        green "  copied  $src"
+    else
+        blue "  skip    $src (not found)"
+    fi
+}
+
+copy_dir() {
+    local src="$1"
+    local dest="$2"
+    mkdir -p "$(dirname "$dest")"
+    if [[ -d "$src" ]]; then
+        rsync -a --delete "$src/" "$dest/"
+        green "  synced  $src"
+    else
+        blue "  skip    $src (not found)"
+    fi
+}
+
+echo ""
+blue "==> Backing up shell configs to $REPO"
+echo ""
+
+# ── Shell ────────────────────────────────────────────────────────────────────
+blue "-- Shell --"
+copy_file "$HOME_DIR/.zshrc"            "$REPO/shell/.zshrc"
+copy_file "$HOME_DIR/.zprofile"         "$REPO/shell/.zprofile"
+
+# ── oh-my-zsh custom themes ──────────────────────────────────────────────────
+blue "-- oh-my-zsh custom themes --"
+copy_dir "$HOME_DIR/.oh-my-zsh/custom/themes" "$REPO/shell/oh-my-zsh/custom/themes"
+
+# ── Git ──────────────────────────────────────────────────────────────────────
+blue "-- Git --"
+copy_file "$HOME_DIR/.gitconfig"          "$REPO/git/.gitconfig"
+copy_file "$HOME_DIR/.config/git/ignore"  "$REPO/git/ignore"
+
+# ── SSH (config only, never keys) ────────────────────────────────────────────
+blue "-- SSH config (no keys) --"
+copy_file "$HOME_DIR/.ssh/config" "$REPO/ssh/config"
+
+# ── Vim ──────────────────────────────────────────────────────────────────────
+blue "-- Vim --"
+copy_file "$HOME_DIR/.vimrc" "$REPO/vim/.vimrc"
+
+echo ""
+green "==> Backup complete."
+echo ""
