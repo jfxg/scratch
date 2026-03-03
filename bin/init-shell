@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# init-shell: Apply backed-up dotfiles from this repo to the home directory.
+# Defaults to dry-run. Pass --apply to make changes.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(dirname "$SCRIPT_DIR")"
+HOME_DIR="$HOME"
+DRY_RUN=true
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+for arg in "$@"; do
+    case "$arg" in
+        --apply) DRY_RUN=false ;;
+        --help|-h)
+            echo "Usage: $(basename "$0") [--apply]"
+            echo ""
+            echo "  Compares repo dotfiles against \$HOME and shows what would change."
+            echo "  --apply   Write changes to \$HOME (default is dry-run)"
+            exit 0
+            ;;
+        *) echo "Unknown argument: $arg" >&2; exit 1 ;;
+    esac
+done
+
+# ── Colour helpers ────────────────────────────────────────────────────────────
+green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
+blue()   { printf '\033[0;34m%s\033[0m\n' "$*"; }
+red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
+dim()    { printf '\033[2m%s\033[0m\n'    "$*"; }
+
+CHANGES=0
+
+# ── File comparison and install ───────────────────────────────────────────────
+# check_file <repo_src> <home_dest>
+check_file() {
+    local src="$1"   # file in repo
+    local dest="$2"  # target path in $HOME
+
+    if [[ ! -f "$src" ]]; then
+        dim "  skip     $(relpath "$src") (not in repo)"
+        return
+    fi
+
+    if [[ ! -f "$dest" ]]; then
+        yellow "  MISSING  $dest"
+        CHANGES=$((CHANGES + 1))
+        if [[ "$DRY_RUN" == false ]]; then
+            mkdir -p "$(dirname "$dest")"
+            cp "$src" "$dest"
+            green "           → created"
+        fi
+        return
+    fi
+
+    if ! diff -q "$src" "$dest" > /dev/null 2>&1; then
+        yellow "  CHANGED  $dest"
+        diff --unified=3 "$dest" "$src" | tail -n +3 | \
+            sed 's/^+/\t\033[0;32m+\033[0m/; s/^-/\t\033[0;31m-\033[0m/; s/^@/\t\033[2m@\033[0m/' || true
+        CHANGES=$((CHANGES + 1))
+        if [[ "$DRY_RUN" == false ]]; then
+            cp "$src" "$dest"
+            green "           → updated"
+        fi
+    else
+        green "  ok       $dest"
+    fi
+}
+
+# check_dir <repo_src_dir> <home_dest_dir>
+check_dir() {
+    local src="$1"
+    local dest="$2"
+
+    if [[ ! -d "$src" ]]; then
+        dim "  skip     $(relpath "$src") (not in repo)"
+        return
+    fi
+
+    # Compare each file in the repo dir against the destination
+    local any=false
+    while IFS= read -r -d '' file; do
+        local rel="${file#$src/}"
+        check_file "$src/$rel" "$dest/$rel"
+        any=true
+    done < <(find "$src" -type f -print0)
+
+    if [[ "$any" == false ]]; then
+        dim "  skip     $(relpath "$src") (empty)"
+    fi
+
+    # If applying, sync any deletions too
+    if [[ "$DRY_RUN" == false && -d "$dest" ]]; then
+        rsync -a --delete "$src/" "$dest/"
+    fi
+}
+
+relpath() { echo "${1#$REPO/}"; }
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+echo ""
+if [[ "$DRY_RUN" == true ]]; then
+    blue "==> Dry run — comparing repo dotfiles to \$HOME (pass --apply to write changes)"
+else
+    blue "==> Applying repo dotfiles to \$HOME"
+fi
+echo ""
+
+blue "-- Shell --"
+check_file "$REPO/shell/.zshrc"    "$HOME_DIR/.zshrc"
+check_file "$REPO/shell/.zprofile" "$HOME_DIR/.zprofile"
+
+blue "-- oh-my-zsh custom themes --"
+check_dir "$REPO/shell/oh-my-zsh/custom/themes" "$HOME_DIR/.oh-my-zsh/custom/themes"
+
+blue "-- Git --"
+check_file "$REPO/git/.gitconfig" "$HOME_DIR/.gitconfig"
+check_file "$REPO/git/ignore"     "$HOME_DIR/.config/git/ignore"
+
+blue "-- SSH config --"
+check_file "$REPO/ssh/config" "$HOME_DIR/.ssh/config"
+
+blue "-- Vim --"
+check_file "$REPO/vim/.vimrc" "$HOME_DIR/.vimrc"
+
+echo ""
+if [[ $CHANGES -eq 0 ]]; then
+    green "==> Everything is up to date."
+elif [[ "$DRY_RUN" == true ]]; then
+    yellow "==> $CHANGES difference(s) found. Run with --apply to update \$HOME."
+else
+    green "==> $CHANGES change(s) applied."
+fi
+echo ""
