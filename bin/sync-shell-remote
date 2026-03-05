@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # sync-shell-remote: Compare local shell configs with a remote host and sync as needed.
+# Reads configs directly from $HOME — safe to run from anywhere (e.g. ~/bin).
 # Defaults to dry-run. Pass --apply to write changes to the remote host.
 #
 # Usage: sync-shell-remote [--apply] [user@]host
+#
+# Note: ~/.zshrc.local is intentionally not synced (it's machine-specific by design).
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(dirname "$SCRIPT_DIR")"
+HOME_DIR="$HOME"
 DRY_RUN=true
 HOST=""
 
@@ -51,18 +53,18 @@ CHANGES=0
 # Fetches the remote file via SCP into a temp location, diffs, and optionally
 # SCPs the local version back.
 check_file() {
-    local src="$1"          # local repo file
+    local src="$1"          # local file path
     local remote_dest="$2"  # path on remote host (~ is expanded by the shell there)
+    local label="${src#$HOME_DIR/}"  # display as ~/... for readability
 
     if [[ ! -f "$src" ]]; then
-        dim "  skip     ${src#$REPO/} (not in repo)"
+        dim "  skip     ~/$label (not found locally)"
         return
     fi
 
     local tmpfile="$TMPDIR_WORK/$(echo "$remote_dest" | tr '/' '_')"
 
     if ! scp -q "${SSH_OPTS[@]}" "$HOST:$remote_dest" "$tmpfile" 2>/dev/null; then
-        # File does not exist on remote
         yellow "  MISSING  $HOST:$remote_dest"
         CHANGES=$((CHANGES + 1))
         if [[ "$DRY_RUN" == false ]]; then
@@ -77,7 +79,6 @@ check_file() {
 
     if ! diff -q "$src" "$tmpfile" > /dev/null 2>&1; then
         yellow "  CHANGED  $HOST:$remote_dest"
-        # Show a readable unified diff (remote as "before", local as "after")
         diff --unified=3 "$tmpfile" "$src" | tail -n +3 | \
             sed $'s/^+/\t\033[0;32m+\033[0m/
                   s/^-/\t\033[0;31m-\033[0m/
@@ -90,22 +91,6 @@ check_file() {
     else
         green "  ok       $HOST:$remote_dest"
     fi
-}
-
-# check_dir <local_src_dir> <remote_dest_dir>
-check_dir() {
-    local src_dir="$1"
-    local remote_dir="$2"
-
-    if [[ ! -d "$src_dir" ]]; then
-        dim "  skip     ${src_dir#$REPO/} (not in repo)"
-        return
-    fi
-
-    while IFS= read -r -d '' file; do
-        local rel="${file#$src_dir/}"
-        check_file "$file" "$remote_dir/$rel"
-    done < <(find "$src_dir" -type f -print0)
 }
 
 # ── Connectivity check ────────────────────────────────────────────────────────
@@ -131,7 +116,6 @@ if [[ -z "$ZSH_PATH" ]]; then
     yellow "not installed"
     if [[ "$DRY_RUN" == false ]]; then
         blue "Installing zsh on $HOST ..."
-        # Detect package manager, install zsh, and set as default shell in one TTY session
         ssh -tt "${SSH_OPTS[@]}" "$HOST" "
             if command -v apt-get > /dev/null 2>&1; then
                 sudo apt-get install -y zsh
@@ -154,7 +138,6 @@ if [[ -z "$ZSH_PATH" ]]; then
     fi
 else
     echo "$ZSH_PATH"
-    # Check whether zsh is already the default shell
     printf 'Checking default shell on %s ... ' "$HOST"
     REMOTE_SHELL="$(ssh "${SSH_OPTS[@]}" "$HOST" 'echo $SHELL')"
     if [[ "$REMOTE_SHELL" == *"zsh" ]]; then
@@ -190,11 +173,19 @@ echo ""
 
 # ── Shell configs ─────────────────────────────────────────────────────────────
 blue "-- Shell --"
-check_file "$REPO/shell/.zshrc"    "~/.zshrc"
-check_file "$REPO/shell/.zprofile" "~/.zprofile"
+check_file "$HOME_DIR/.zshrc"    "~/.zshrc"
+check_file "$HOME_DIR/.zprofile" "~/.zprofile"
+dim "  skip     ~/.zshrc.local (machine-specific, intentionally not synced)"
 
-blue "-- oh-my-zsh custom themes --"
-check_dir "$REPO/shell/oh-my-zsh/custom/themes" "~/.oh-my-zsh/custom/themes"
+# ── oh-my-zsh custom theme ────────────────────────────────────────────────────
+blue "-- oh-my-zsh custom theme --"
+ACTIVE_THEME="$(grep '^ZSH_THEME=' "$HOME_DIR/.zshrc" 2>/dev/null | head -1 | cut -d'"' -f2 || true)"
+if [[ -n "$ACTIVE_THEME" ]]; then
+    check_file "$HOME_DIR/.oh-my-zsh/custom/themes/${ACTIVE_THEME}.zsh-theme" \
+               "~/.oh-my-zsh/custom/themes/${ACTIVE_THEME}.zsh-theme"
+else
+    dim "  skip     no ZSH_THEME found in ~/.zshrc"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""

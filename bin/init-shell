@@ -111,6 +111,29 @@ blue "-- Shell --"
 check_file "$REPO/shell/.zshrc"    "$HOME_DIR/.zshrc"
 check_file "$REPO/shell/.zprofile" "$HOME_DIR/.zprofile"
 
+blue "-- ~/bin scripts --"
+if [[ ! -d "$HOME_DIR/bin" ]]; then
+    yellow "  MISSING  ~/bin (directory)"
+    CHANGES=$((CHANGES + 1))
+    if [[ "$DRY_RUN" == false ]]; then
+        mkdir -p "$HOME_DIR/bin"
+        green "           → created ~/bin"
+    fi
+fi
+check_dir "$REPO/bin" "$HOME_DIR/bin"
+
+blue "-- PATH --"
+if grep -q '\$HOME/bin\|~/bin' "$HOME_DIR/.zshrc" 2>/dev/null; then
+    green "  ok       ~/bin in PATH via ~/.zshrc"
+else
+    yellow "  MISSING  ~/bin not found in ~/.zshrc PATH"
+    CHANGES=$((CHANGES + 1))
+    if [[ "$DRY_RUN" == false ]]; then
+        printf '\nexport PATH="$HOME/bin:$PATH"\n' >> "$HOME_DIR/.zshrc"
+        green "           → added to ~/.zshrc"
+    fi
+fi
+
 blue "-- oh-my-zsh custom themes --"
 check_dir "$REPO/shell/oh-my-zsh/custom/themes" "$HOME_DIR/.oh-my-zsh/custom/themes"
 
