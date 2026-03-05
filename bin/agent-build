@@ -7,11 +7,14 @@
 # Options:
 #   --no-cache   Pass --no-cache to docker build (forces full layer rebuild)
 #   -h, --help   Show this help message
+#
+# Environment:
+#   AGENT_SANDBOX_DIR   Path to the docker/agent-sandbox directory containing
+#                       the Dockerfile. Required when running from ~/bin.
+#                       Set this in ~/.zshrc.local on each machine.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-DOCKERFILE_DIR="$REPO_ROOT/docker/agent-sandbox"
+DOCKERFILE_DIR="${AGENT_SANDBOX_DIR:-$HOME/agent-sandbox}"
 IMAGE_NAME="agent-sandbox"
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -36,6 +39,12 @@ done
 # ── Preflight ─────────────────────────────────────────────────────────────────
 if ! command -v docker &>/dev/null; then
     red "error: docker is not installed or not in PATH"
+    exit 1
+fi
+
+if [[ ! -f "$DOCKERFILE_DIR/Dockerfile" ]]; then
+    red "error: Dockerfile not found at $DOCKERFILE_DIR"
+    red "  set AGENT_SANDBOX_DIR to the docker/agent-sandbox directory in your repo"
     exit 1
 fi
 

@@ -134,6 +134,22 @@ else
     fi
 fi
 
+blue "-- Agent sandbox --"
+check_dir "$REPO/docker/agent-sandbox" "$HOME_DIR/agent-sandbox"
+
+blue "-- AGENT_SANDBOX_DIR --"
+if grep -q 'AGENT_SANDBOX_DIR' "$HOME_DIR/.zshrc.local" 2>/dev/null || \
+   grep -q 'AGENT_SANDBOX_DIR' "$HOME_DIR/.zshrc" 2>/dev/null; then
+    green "  ok       AGENT_SANDBOX_DIR is set"
+else
+    yellow "  MISSING  AGENT_SANDBOX_DIR not set"
+    CHANGES=$((CHANGES + 1))
+    if [[ "$DRY_RUN" == false ]]; then
+        printf '\nexport AGENT_SANDBOX_DIR="$HOME/agent-sandbox"\n' >> "$HOME_DIR/.zshrc.local"
+        green "           → added to ~/.zshrc.local"
+    fi
+fi
+
 blue "-- oh-my-zsh custom themes --"
 check_dir "$REPO/shell/oh-my-zsh/custom/themes" "$HOME_DIR/.oh-my-zsh/custom/themes"
 

@@ -3,15 +3,16 @@
 # The container is ephemeral -- it is destroyed on exit. The workspace directory
 # on the host is preserved so you can pull out any artifacts afterward.
 #
-# Credentials are inherited from your existing Claude Code login on the host
-# (~/.claude is mounted read-only into the container).
+# By default uses your existing Claude Code login (~/.claude mounted into the container).
+# Pass --ollama to route inference to a local Ollama instance instead.
 #
 # Usage:
 #   agent [options] [-- <prompt>]
 #
 # Options:
+#   --ollama [url]  Use Ollama backend. URL defaults to $OLLAMA_BASE_URL if omitted.
 #   --repo <path>   Mount an existing repo into /workspace instead of a fresh dir
-#   --shell         Drop into a bash shell instead of launching Claude
+#   --shell         Drop into a zsh shell instead of launching Claude
 #   -h, --help      Show this help message
 #
 # To build or rebuild the image, run: agent-build
@@ -19,6 +20,7 @@
 # Environment:
 #   AGENT_WORKSPACES   Directory where fresh workspaces are created.
 #                      Defaults to ~/agent-workspaces.
+#   OLLAMA_BASE_URL    Default Ollama URL used when --ollama is passed without a URL.
 set -euo pipefail
 
 IMAGE_NAME="agent-sandbox"
@@ -33,10 +35,22 @@ dim()    { printf '\033[2m%s\033[0m\n'    "$*"; }
 # ── Argument parsing ──────────────────────────────────────────────────────────
 MOUNT_REPO=""
 DROP_TO_SHELL=false
+BACKEND="anthropic"
+OLLAMA_URL=""
 PROMPT_ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --ollama)
+            BACKEND="ollama"
+            # Optional URL argument — consume next arg only if it looks like a URL
+            if [[ -n "${2:-}" && "${2:-}" == http* ]]; then
+                OLLAMA_URL="$2"
+                shift 2
+            else
+                shift
+            fi
+            ;;
         --repo)
             [[ -z "${2:-}" ]] && { red "error: --repo requires a path"; exit 1; }
             MOUNT_REPO="$(cd "$2" && pwd)"
@@ -68,9 +82,19 @@ if ! command -v docker &>/dev/null; then
     exit 1
 fi
 
-if [[ ! -d "$HOME/.claude" ]]; then
+if [[ "$BACKEND" == "anthropic" ]] && [[ ! -d "$HOME/.claude" ]]; then
     red "error: ~/.claude not found — run 'claude' on your host machine first to log in"
     exit 1
+fi
+
+if [[ "$BACKEND" == "ollama" ]]; then
+    # Resolve URL: flag arg > env var > error
+    OLLAMA_URL="${OLLAMA_URL:-${OLLAMA_BASE_URL:-}}"
+    if [[ -z "$OLLAMA_URL" ]]; then
+        red "error: --ollama requires a URL (or set OLLAMA_BASE_URL)"
+        red "  e.g. agent --ollama http://192.168.1.50:11434"
+        exit 1
+    fi
 fi
 
 if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
@@ -104,13 +128,23 @@ DOCKER_ARGS=(
     --tty
     --name "agent-$(date +%s)"
     --volume "$WORKSPACE_HOST":/workspace
-    --volume "$HOME/.claude":/tmp/claude-host:ro
     --workdir /workspace
 )
 
-# ~/.claude.json lives in the home dir, separate from the ~/.claude directory
-[[ -f "$HOME/.claude.json" ]] && \
-    DOCKER_ARGS+=(--volume "$HOME/.claude.json":/tmp/claude-host.json:ro)
+# ── Backend-specific config ───────────────────────────────────────────────────
+if [[ "$BACKEND" == "ollama" ]]; then
+    DOCKER_ARGS+=(
+        --env "ANTHROPIC_BASE_URL=$OLLAMA_URL"
+        --env "ANTHROPIC_API_KEY=ollama"
+    )
+else
+    # Anthropic: mount host Claude credentials for the entrypoint to copy in
+    DOCKER_ARGS+=(--volume "$HOME/.claude":/tmp/claude-host:ro)
+    [[ -f "$HOME/.claude.json" ]] && \
+        DOCKER_ARGS+=(--volume "$HOME/.claude.json":/tmp/claude-host.json:ro)
+fi
+
+# ── Common mounts (both backends) ─────────────────────────────────────────────
 
 # Mount git config read-only so the agent can commit with your identity
 [[ -f "$HOME/.gitconfig" ]] && \
@@ -121,7 +155,7 @@ DOCKER_ARGS=(
     DOCKER_ARGS+=(--volume "$HOME/.config/gh":/home/agent/.config/gh:ro)
 
 # Mount zsh config — these override the defaults installed by oh-my-zsh in the image
-[[ -f "$HOME/.zshrc"   ]] && DOCKER_ARGS+=(--volume "$HOME/.zshrc":/home/agent/.zshrc:ro)
+[[ -f "$HOME/.zshrc"    ]] && DOCKER_ARGS+=(--volume "$HOME/.zshrc":/home/agent/.zshrc:ro)
 [[ -f "$HOME/.zprofile" ]] && DOCKER_ARGS+=(--volume "$HOME/.zprofile":/home/agent/.zprofile:ro)
 
 # Mount any custom oh-my-zsh themes so your prompt looks right
@@ -131,6 +165,11 @@ DOCKER_ARGS=(
 # ── Run ───────────────────────────────────────────────────────────────────────
 echo ""
 blue "==> Starting agent sandbox..."
+if [[ "$BACKEND" == "ollama" ]]; then
+    dim "    backend   : ollama ($OLLAMA_URL)"
+else
+    dim "    backend   : anthropic"
+fi
 dim "    workspace : $WORKSPACE_HOST"
 dim "    image     : $IMAGE_NAME"
 dim "    command   : ${CONTAINER_CMD[*]}"
