@@ -1,0 +1,4 @@
+# ~/.zshrc.local — machine-specific config for this Mac (not tracked in dotfiles repo)
+
+# JetBrains Toolbox
+export PATH="$PATH:/Users/johnfx/Library/Application Support/JetBrains/Toolbox/scripts"

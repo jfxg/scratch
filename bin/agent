@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# agent: Spin up an isolated Docker sandbox and run Claude Code with full permissions.
+# The container is ephemeral -- it is destroyed on exit. The workspace directory
+# on the host is preserved so you can pull out any artifacts afterward.
+#
+# Credentials are inherited from your existing Claude Code login on the host
+# (~/.claude is mounted read-only into the container).
+#
+# Usage:
+#   agent [options] [-- <prompt>]
+#
+# Options:
+#   --repo <path>   Mount an existing repo into /workspace instead of a fresh dir
+#   --shell         Drop into a bash shell instead of launching Claude
+#   -h, --help      Show this help message
+#
+# To build or rebuild the image, run: agent-build
+#
+# Environment:
+#   AGENT_WORKSPACES   Directory where fresh workspaces are created.
+#                      Defaults to ~/agent-workspaces.
+set -euo pipefail
+
+IMAGE_NAME="agent-sandbox"
+WORKSPACES_DIR="${AGENT_WORKSPACES:-$HOME/agent-workspaces}"
+
+# ── Colour helpers ────────────────────────────────────────────────────────────
+green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
+blue()   { printf '\033[0;34m%s\033[0m\n' "$*"; }
+red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
+dim()    { printf '\033[2m%s\033[0m\n'    "$*"; }
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+MOUNT_REPO=""
+DROP_TO_SHELL=false
+PROMPT_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --repo)
+            [[ -z "${2:-}" ]] && { red "error: --repo requires a path"; exit 1; }
+            MOUNT_REPO="$(cd "$2" && pwd)"
+            shift 2
+            ;;
+        --shell)
+            DROP_TO_SHELL=true
+            shift
+            ;;
+        -h|--help)
+            sed -n '2,/^set /p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        --)
+            shift
+            PROMPT_ARGS=("$@")
+            break
+            ;;
+        *)
+            PROMPT_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# ── Preflight checks ──────────────────────────────────────────────────────────
+if ! command -v docker &>/dev/null; then
+    red "error: docker is not installed or not in PATH"
+    exit 1
+fi
+
+if [[ ! -d "$HOME/.claude" ]]; then
+    red "error: ~/.claude not found — run 'claude' on your host machine first to log in"
+    exit 1
+fi
+
+if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+    red "error: image '$IMAGE_NAME' not found — run 'agent-build' first"
+    exit 1
+fi
+
+# ── Workspace setup ───────────────────────────────────────────────────────────
+if [[ -n "$MOUNT_REPO" ]]; then
+    WORKSPACE_HOST="$MOUNT_REPO"
+    dim "==> Mounting existing repo: $WORKSPACE_HOST"
+else
+    mkdir -p "$WORKSPACES_DIR"
+    WORKSPACE_HOST="$(mktemp -d "$WORKSPACES_DIR/$(date +%Y%m%d-%H%M%S)-XXXX")"
+    dim "==> Created fresh workspace: $WORKSPACE_HOST"
+fi
+
+# ── Container command ─────────────────────────────────────────────────────────
+if $DROP_TO_SHELL; then
+    CONTAINER_CMD=(zsh)
+elif [[ ${#PROMPT_ARGS[@]} -gt 0 ]]; then
+    CONTAINER_CMD=(claude --dangerously-skip-permissions "${PROMPT_ARGS[@]}")
+else
+    CONTAINER_CMD=(claude --dangerously-skip-permissions)
+fi
+
+# ── Docker flags ──────────────────────────────────────────────────────────────
+DOCKER_ARGS=(
+    --rm
+    --interactive
+    --tty
+    --name "agent-$(date +%s)"
+    --volume "$WORKSPACE_HOST":/workspace
+    --volume "$HOME/.claude":/tmp/claude-host:ro
+    --workdir /workspace
+)
+
+# ~/.claude.json lives in the home dir, separate from the ~/.claude directory
+[[ -f "$HOME/.claude.json" ]] && \
+    DOCKER_ARGS+=(--volume "$HOME/.claude.json":/tmp/claude-host.json:ro)
+
+# Mount git config read-only so the agent can commit with your identity
+[[ -f "$HOME/.gitconfig" ]] && \
+    DOCKER_ARGS+=(--volume "$HOME/.gitconfig":/home/agent/.gitconfig:ro)
+
+# Mount gh CLI config so the agent can use GitHub if you're already authed
+[[ -d "$HOME/.config/gh" ]] && \
+    DOCKER_ARGS+=(--volume "$HOME/.config/gh":/home/agent/.config/gh:ro)
+
+# Mount zsh config — these override the defaults installed by oh-my-zsh in the image
+[[ -f "$HOME/.zshrc"   ]] && DOCKER_ARGS+=(--volume "$HOME/.zshrc":/home/agent/.zshrc:ro)
+[[ -f "$HOME/.zprofile" ]] && DOCKER_ARGS+=(--volume "$HOME/.zprofile":/home/agent/.zprofile:ro)
+
+# Mount any custom oh-my-zsh themes so your prompt looks right
+[[ -d "$HOME/.oh-my-zsh/custom/themes" ]] && \
+    DOCKER_ARGS+=(--volume "$HOME/.oh-my-zsh/custom/themes":/home/agent/.oh-my-zsh/custom/themes:ro)
+
+# ── Run ───────────────────────────────────────────────────────────────────────
+echo ""
+blue "==> Starting agent sandbox..."
+dim "    workspace : $WORKSPACE_HOST"
+dim "    image     : $IMAGE_NAME"
+dim "    command   : ${CONTAINER_CMD[*]}"
+echo ""
+
+docker run "${DOCKER_ARGS[@]}" "$IMAGE_NAME" "${CONTAINER_CMD[@]}"
+
+# ── Post-exit summary ─────────────────────────────────────────────────────────
+echo ""
+if [[ -z "$MOUNT_REPO" ]]; then
+    green "==> Session ended. Workspace preserved at:"
+    echo "    $WORKSPACE_HOST"
+else
+    green "==> Session ended."
+fi
+echo ""
