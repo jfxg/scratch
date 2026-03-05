@@ -1,0 +1,12 @@
+# ~/.zshrc.local — machine-specific shell config, not tracked in the dotfiles repo.
+# Copy this file to ~/.zshrc.local and customise for each machine.
+# This file is sourced at the end of ~/.zshrc.
+
+# ── Example: JetBrains Toolbox (macOS) ───────────────────────────────────────
+# export PATH="$PATH:/Users/johnfx/Library/Application Support/JetBrains/Toolbox/scripts"
+
+# ── Example: Homebrew (macOS) ─────────────────────────────────────────────────
+# eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# ── Example: work-specific tooling ───────────────────────────────────────────
+# source ~/work/scripts/env.sh

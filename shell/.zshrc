@@ -1,9 +1,6 @@
 # If you come from bash you might have to change your $PATH.
 export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
 
-# Added by Toolbox App
-export PATH="$PATH:/Users/johnfx/Library/Application Support/JetBrains/Toolbox/scripts"
-
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
@@ -111,3 +108,6 @@ source $ZSH/oh-my-zsh.sh
 
 alias docker-ports="docker ps --format \"table {{.Names}}\t{{.Ports}}\""
 alias docker-images="docker ps -a --format \"table {{.Names}}\t{{.Status}}\t{{.Image}}\""
+
+# Machine-specific config (not tracked in repo — create ~/.zshrc.local per machine)
+[[ -f ~/.zshrc.local ]] && source ~/.zshrc.local

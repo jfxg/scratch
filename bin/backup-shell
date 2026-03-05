@@ -41,8 +41,15 @@ echo ""
 
 # ── Shell ────────────────────────────────────────────────────────────────────
 blue "-- Shell --"
-copy_file "$HOME_DIR/.zshrc"            "$REPO/shell/.zshrc"
-copy_file "$HOME_DIR/.zprofile"         "$REPO/shell/.zprofile"
+copy_file "$HOME_DIR/.zshrc"    "$REPO/shell/.zshrc"
+copy_file "$HOME_DIR/.zprofile" "$REPO/shell/.zprofile"
+
+blue "-- Local shell overrides (machine-specific, not tracked in repo) --"
+if [[ -f "$HOME_DIR/.zshrc.local" ]]; then
+    blue "  exists  ~/.zshrc.local (not backed up — intentionally local)"
+else
+    blue "  absent  ~/.zshrc.local (create one for machine-specific config)"
+fi
 
 # ── oh-my-zsh custom themes ──────────────────────────────────────────────────
 blue "-- oh-my-zsh custom themes --"
