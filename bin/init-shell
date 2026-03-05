@@ -4,7 +4,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(dirname "$SCRIPT_DIR")"
+# DOTFILES_REPO env var overrides the default (parent of script dir).
+# Needed when running from ~/bin where the parent is $HOME, not the repo.
+REPO="${DOTFILES_REPO:-$(dirname "$SCRIPT_DIR")}"
 HOME_DIR="$HOME"
 DRY_RUN=true
 
@@ -17,6 +19,10 @@ for arg in "$@"; do
             echo ""
             echo "  Compares repo dotfiles against \$HOME and shows what would change."
             echo "  --apply   Write changes to \$HOME (default is dry-run)"
+            echo ""
+            echo "  Environment:"
+            echo "    DOTFILES_REPO   Path to the dotfiles repo (default: parent of this script)."
+            echo "                    Set automatically in ~/.zshrc.local on first run."
             exit 0
             ;;
         *) echo "Unknown argument: $arg" >&2; exit 1 ;;
@@ -48,7 +54,7 @@ check_file() {
         CHANGES=$((CHANGES + 1))
         if [[ "$DRY_RUN" == false ]]; then
             mkdir -p "$(dirname "$dest")"
-            cp "$src" "$dest"
+            cp -p "$src" "$dest"
             green "           → created"
         fi
         return
@@ -60,7 +66,7 @@ check_file() {
             sed 's/^+/\t\033[0;32m+\033[0m/; s/^-/\t\033[0;31m-\033[0m/; s/^@/\t\033[2m@\033[0m/' || true
         CHANGES=$((CHANGES + 1))
         if [[ "$DRY_RUN" == false ]]; then
-            cp "$src" "$dest"
+            cp -p "$src" "$dest"
             green "           → updated"
         fi
     else
@@ -131,6 +137,19 @@ else
     if [[ "$DRY_RUN" == false ]]; then
         printf '\nexport PATH="$HOME/bin:$PATH"\n' >> "$HOME_DIR/.zshrc"
         green "           → added to ~/.zshrc"
+    fi
+fi
+
+blue "-- DOTFILES_REPO --"
+if grep -q 'DOTFILES_REPO' "$HOME_DIR/.zshrc.local" 2>/dev/null || \
+   grep -q 'DOTFILES_REPO' "$HOME_DIR/.zshrc" 2>/dev/null; then
+    green "  ok       DOTFILES_REPO is set"
+else
+    yellow "  MISSING  DOTFILES_REPO not set (will pin to $REPO)"
+    CHANGES=$((CHANGES + 1))
+    if [[ "$DRY_RUN" == false ]]; then
+        printf '\nexport DOTFILES_REPO="%s"\n' "$REPO" >> "$HOME_DIR/.zshrc.local"
+        green "           → added to ~/.zshrc.local"
     fi
 fi
 

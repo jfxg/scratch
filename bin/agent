@@ -8,12 +8,25 @@
 #
 # Usage:
 #   agent [options] [-- <prompt>]
+#   agent ls
 #
 # Options:
+#   --name <name>   Create or resume a named workspace (e.g. "my-project").
+#                   If the workspace already exists, it is resumed.
 #   --ollama [url]  Use Ollama backend. URL defaults to $OLLAMA_BASE_URL if omitted.
-#   --repo <path>   Mount an existing repo into /workspace instead of a fresh dir
+#   --repo <slug>   Clone a GitHub repo (e.g. "owner/repo") into a fresh /workspace.
+#                   Or pass a local path to mount an existing directory instead.
+#   --branch <ref>  Branch, tag, or SHA to check out after cloning (used with --repo slug).
 #   --shell         Drop into a zsh shell instead of launching Claude
+#   --no-auth       Skip copying host credentials into the container (useful for
+#                   testing a fresh login to see where Claude stores auth on Linux)
 #   -h, --help      Show this help message
+#
+# Subcommands:
+#   ls              List all workspaces in AGENT_WORKSPACES, newest first.
+#   rm <name>       Remove a specific workspace by name.
+#   clean [--days N] Remove unnamed (timestamped) workspaces older than N days (default: 7).
+#                   Shows what will be deleted and asks for confirmation.
 #
 # To build or rebuild the image, run: agent-build
 #
@@ -28,19 +41,101 @@ WORKSPACES_DIR="${AGENT_WORKSPACES:-$HOME/agent-workspaces}"
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
 blue()   { printf '\033[0;34m%s\033[0m\n' "$*"; }
 red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
 dim()    { printf '\033[2m%s\033[0m\n'    "$*"; }
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 MOUNT_REPO=""
+CLONE_REPO=""
+CLONE_BRANCH=""
+SESSION_NAME=""
 DROP_TO_SHELL=false
+SKIP_AUTH=false
 BACKEND="anthropic"
 OLLAMA_URL=""
 PROMPT_ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        ls)
+            # List workspaces, newest first
+            if [[ ! -d "$WORKSPACES_DIR" ]]; then
+                echo "No workspaces yet (${WORKSPACES_DIR} does not exist)."
+                exit 0
+            fi
+            printf '\n%-30s  %s\n' "NAME" "LAST MODIFIED"
+            printf '%-30s  %s\n' "------------------------------" "--------------------"
+            while IFS= read -r dir; do
+                name="$(basename "$dir")"
+                modified="$(date -r "$dir" '+%Y-%m-%d %H:%M')"
+                printf '%-30s  %s\n' "$name" "$modified"
+            done < <(ls -dt "$WORKSPACES_DIR"/*/ 2>/dev/null)
+            echo ""
+            exit 0
+            ;;
+        rm)
+            [[ -z "${2:-}" ]] && { red "error: rm requires a workspace name"; exit 1; }
+            TARGET="$WORKSPACES_DIR/$2"
+            if [[ ! -d "$TARGET" ]]; then
+                red "error: workspace not found: $TARGET"
+                exit 1
+            fi
+            printf 'Remove %s? [y/N] ' "$TARGET"
+            read -r reply
+            if [[ "$reply" =~ ^[Yy]$ ]]; then
+                rm -rf "$TARGET"
+                green "Removed $TARGET"
+            else
+                dim "Cancelled."
+            fi
+            exit 0
+            ;;
+        clean)
+            shift
+            CLEAN_DAYS=7
+            [[ -n "${1:-}" && "$1" == "--days" ]] && { CLEAN_DAYS="$2"; shift 2; }
+            if [[ ! -d "$WORKSPACES_DIR" ]]; then
+                echo "No workspaces yet."
+                exit 0
+            fi
+            # Collect unnamed workspaces (YYYYMMDD-HHMMSS-XXXX) older than CLEAN_DAYS.
+            # Note: find -mtime +N matches files older than N full 24-hour periods, so
+            # we skip the -mtime filter entirely when CLEAN_DAYS=0 to match everything.
+            STALE=()
+            FIND_ARGS=("$WORKSPACES_DIR" -mindepth 1 -maxdepth 1 -type d
+                -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*')
+            [[ "$CLEAN_DAYS" -gt 0 ]] && FIND_ARGS+=(-mtime +"$CLEAN_DAYS")
+            while IFS= read -r d; do
+                STALE+=("$d")
+            done < <(find "${FIND_ARGS[@]}" 2>/dev/null | sort)
+            if [[ ${#STALE[@]} -eq 0 ]]; then
+                green "No unnamed workspaces older than ${CLEAN_DAYS} days."
+                exit 0
+            fi
+            echo ""
+            yellow "Unnamed workspaces older than ${CLEAN_DAYS} days:"
+            for d in "${STALE[@]}"; do
+                modified="$(date -r "$d" '+%Y-%m-%d %H:%M')"
+                printf '  %-30s  (%s)\n' "$(basename "$d")" "$modified"
+            done
+            echo ""
+            printf 'Delete %d workspace(s)? [y/N] ' "${#STALE[@]}"
+            read -r reply
+            if [[ "$reply" =~ ^[Yy]$ ]]; then
+                for d in "${STALE[@]}"; do rm -rf "$d"; done
+                green "Removed ${#STALE[@]} workspace(s)."
+            else
+                dim "Cancelled."
+            fi
+            exit 0
+            ;;
+        --name)
+            [[ -z "${2:-}" ]] && { red "error: --name requires a value"; exit 1; }
+            SESSION_NAME="$2"
+            shift 2
+            ;;
         --ollama)
             BACKEND="ollama"
             # Optional URL argument — consume next arg only if it looks like a URL
@@ -52,12 +147,27 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         --repo)
-            [[ -z "${2:-}" ]] && { red "error: --repo requires a path"; exit 1; }
-            MOUNT_REPO="$(cd "$2" && pwd)"
+            [[ -z "${2:-}" ]] && { red "error: --repo requires a path or owner/repo slug"; exit 1; }
+            # Local path: starts with / ~ . or exists on disk → mount it
+            # GitHub slug: owner/repo → clone fresh inside the container
+            if [[ "$2" == /* || "$2" == ~* || "$2" == ./* || -d "$2" ]]; then
+                MOUNT_REPO="$(cd "$2" && pwd)"
+            else
+                CLONE_REPO="$2"
+            fi
+            shift 2
+            ;;
+        --branch)
+            [[ -z "${2:-}" ]] && { red "error: --branch requires a value"; exit 1; }
+            CLONE_BRANCH="$2"
             shift 2
             ;;
         --shell)
             DROP_TO_SHELL=true
+            shift
+            ;;
+        --no-auth)
+            SKIP_AUTH=true
             shift
             ;;
         -h|--help)
@@ -82,7 +192,7 @@ if ! command -v docker &>/dev/null; then
     exit 1
 fi
 
-if [[ "$BACKEND" == "anthropic" ]] && [[ ! -d "$HOME/.claude" ]]; then
+if [[ "$BACKEND" == "anthropic" ]] && [[ "$SKIP_AUTH" == false ]] && [[ ! -d "$HOME/.claude" ]]; then
     red "error: ~/.claude not found — run 'claude' on your host machine first to log in"
     exit 1
 fi
@@ -102,10 +212,34 @@ if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
     exit 1
 fi
 
+# ── Preflight: --branch only makes sense with a GitHub slug ───────────────────
+if [[ -n "$CLONE_BRANCH" && -z "$CLONE_REPO" ]]; then
+    red "error: --branch requires --repo <owner/repo>"
+    exit 1
+fi
+
 # ── Workspace setup ───────────────────────────────────────────────────────────
 if [[ -n "$MOUNT_REPO" ]]; then
     WORKSPACE_HOST="$MOUNT_REPO"
     dim "==> Mounting existing repo: $WORKSPACE_HOST"
+elif [[ -n "$CLONE_REPO" ]]; then
+    mkdir -p "$WORKSPACES_DIR"
+    if [[ -n "$SESSION_NAME" ]]; then
+        WORKSPACE_HOST="$WORKSPACES_DIR/$SESSION_NAME"
+        mkdir -p "$WORKSPACE_HOST"
+    else
+        WORKSPACE_HOST="$(mktemp -d "$WORKSPACES_DIR/$(date +%Y%m%d-%H%M%S)-XXXX")"
+    fi
+    dim "==> Will clone $CLONE_REPO${CLONE_BRANCH:+@$CLONE_BRANCH} into: $WORKSPACE_HOST"
+elif [[ -n "$SESSION_NAME" ]]; then
+    mkdir -p "$WORKSPACES_DIR"
+    WORKSPACE_HOST="$WORKSPACES_DIR/$SESSION_NAME"
+    if [[ -d "$WORKSPACE_HOST" ]]; then
+        dim "==> Resuming workspace: $WORKSPACE_HOST"
+    else
+        mkdir -p "$WORKSPACE_HOST"
+        dim "==> Created workspace: $WORKSPACE_HOST"
+    fi
 else
     mkdir -p "$WORKSPACES_DIR"
     WORKSPACE_HOST="$(mktemp -d "$WORKSPACES_DIR/$(date +%Y%m%d-%H%M%S)-XXXX")"
@@ -131,17 +265,39 @@ DOCKER_ARGS=(
     --workdir /workspace
 )
 
+# ── GitHub clone config ───────────────────────────────────────────────────────
+[[ -n "$CLONE_REPO"   ]] && DOCKER_ARGS+=(--env "CLONE_REPO=$CLONE_REPO")
+[[ -n "$CLONE_BRANCH" ]] && DOCKER_ARGS+=(--env "CLONE_BRANCH=$CLONE_BRANCH")
+
 # ── Backend-specific config ───────────────────────────────────────────────────
 if [[ "$BACKEND" == "ollama" ]]; then
     DOCKER_ARGS+=(
         --env "ANTHROPIC_BASE_URL=$OLLAMA_URL"
         --env "ANTHROPIC_API_KEY=ollama"
     )
-else
-    # Anthropic: mount host Claude credentials for the entrypoint to copy in
+elif [[ "$SKIP_AUTH" == false ]]; then
+    # Anthropic: mount host Claude credentials for the entrypoint to copy in.
+    # The native installer stores auth in ~/.local/share/claude in addition to
+    # the legacy ~/.claude and ~/.claude.json locations.
     DOCKER_ARGS+=(--volume "$HOME/.claude":/tmp/claude-host:ro)
     [[ -f "$HOME/.claude.json" ]] && \
         DOCKER_ARGS+=(--volume "$HOME/.claude.json":/tmp/claude-host.json:ro)
+    [[ -d "$HOME/.local/share/claude" ]] && \
+        DOCKER_ARGS+=(--volume "$HOME/.local/share/claude":/tmp/claude-local-share:ro)
+
+    # Extract OAuth credentials from macOS Keychain and pass to the container.
+    # The native installer stores the actual token in Keychain, not in any file.
+    if command -v security &>/dev/null; then
+        _CLAUDE_CREDS="$(security find-generic-password \
+            -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null || true)"
+        if [[ -n "$_CLAUDE_CREDS" ]]; then
+            _CREDS_TMP="$(mktemp /tmp/claude-creds-XXXXXX)"
+            printf '%s' "$_CLAUDE_CREDS" > "$_CREDS_TMP"
+            DOCKER_ARGS+=(--volume "$_CREDS_TMP":/tmp/claude-credentials:ro)
+            # Clean up the temp file after docker exits
+            trap "rm -f '$_CREDS_TMP'" EXIT
+        fi
+    fi
 fi
 
 # ── Common mounts (both backends) ─────────────────────────────────────────────
@@ -150,9 +306,13 @@ fi
 [[ -f "$HOME/.gitconfig" ]] && \
     DOCKER_ARGS+=(--volume "$HOME/.gitconfig":/home/agent/.gitconfig:ro)
 
-# Mount gh CLI config so the agent can use GitHub if you're already authed
-[[ -d "$HOME/.config/gh" ]] && \
-    DOCKER_ARGS+=(--volume "$HOME/.config/gh":/home/agent/.config/gh:ro)
+# Pass GitHub auth token so the agent can use gh/git inside the container.
+# On macOS gh stores the token in Keychain (not in ~/.config/gh), so we extract
+# it explicitly and pass it as GH_TOKEN, which both gh and git respect.
+if command -v gh &>/dev/null; then
+    _GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+    [[ -n "$_GH_TOKEN" ]] && DOCKER_ARGS+=(--env "GH_TOKEN=$_GH_TOKEN")
+fi
 
 # Mount zsh config — these override the defaults installed by oh-my-zsh in the image
 [[ -f "$HOME/.zshrc"    ]] && DOCKER_ARGS+=(--volume "$HOME/.zshrc":/home/agent/.zshrc:ro)
@@ -170,6 +330,7 @@ if [[ "$BACKEND" == "ollama" ]]; then
 else
     dim "    backend   : anthropic"
 fi
+[[ -n "$CLONE_REPO" ]] && dim "    clone     : $CLONE_REPO${CLONE_BRANCH:+@$CLONE_BRANCH}"
 dim "    workspace : $WORKSPACE_HOST"
 dim "    image     : $IMAGE_NAME"
 dim "    command   : ${CONTAINER_CMD[*]}"

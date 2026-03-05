@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     fd-find \
     jq \
+    less \
     build-essential \
     zsh \
     && rm -rf /var/lib/apt/lists/*
@@ -23,21 +24,30 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Claude Code ───────────────────────────────────────────────────────────────
-RUN npm install -g @anthropic-ai/claude-code
-
 # ── fd alias (Debian names the binary fdfind) ─────────────────────────────────
 RUN ln -s $(which fdfind) /usr/local/bin/fd
 
-# ── Entrypoint script (runs as root before user switch so it's in a stable path)
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# ── Claude Code ───────────────────────────────────────────────────────────────
+# Install via npm as root — the package is a Node.js script, so it runs on any
+# architecture without a native binary. The native installer downloads a
+# platform-specific binary that mismatches the container arch under Docker Desktop.
+RUN npm install -g @anthropic-ai/claude-code
 
-# ── Dedicated agent user (UID auto-assigned to avoid conflicts with base image) ─
+# ── Entrypoint script (runs as root before user switch so it's in a stable path)
+COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# ── Dedicated agent user ───────────────────────────────────────────────────────
+# Symlink claude into ~/.local/bin so PATH is consistent whether or not the user
+# later runs `claude install` to switch to the native binary inside a live session.
 RUN useradd -m -s /bin/zsh agent \
-    && mkdir -p /workspace && chown agent:agent /workspace
+    && mkdir -p /workspace /home/agent/.local/bin \
+    && ln -s /usr/local/bin/claude /home/agent/.local/bin/claude \
+    && chown -R agent:agent /workspace /home/agent
 
 USER agent
+
+# Ensure ~/.local/bin is in PATH for all processes (not just interactive shells)
+ENV PATH="/home/agent/.local/bin:$PATH"
 
 # ── oh-my-zsh ─────────────────────────────────────────────────────────────────
 # Install unattended — the host's .zshrc will be mounted over the generated one
