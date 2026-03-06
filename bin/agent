@@ -34,6 +34,9 @@
 #   AGENT_WORKSPACES   Directory where fresh workspaces are created.
 #                      Defaults to ~/agent-workspaces.
 #   OLLAMA_BASE_URL    Default Ollama URL used when --ollama is passed without a URL.
+#   DOCKER_CONTEXT     Docker context to use (e.g. "desktop-linux"). Respected natively
+#                      by the docker CLI. Set in ~/.zshrc.local if your image and daemon
+#                      live in a non-default context (common with Docker Desktop on Mac).
 set -euo pipefail
 
 IMAGE_NAME="agent-sandbox"
@@ -207,9 +210,14 @@ if [[ "$BACKEND" == "ollama" ]]; then
     fi
 fi
 
-if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
-    red "error: image '$IMAGE_NAME' not found — run 'agent-build' first"
-    exit 1
+if [[ -z "$(docker images -q "$IMAGE_NAME" 2>/dev/null)" ]]; then
+    yellow "==> Image '$IMAGE_NAME' not found (Docker Desktop may have reset). Building now..."
+    AGENT_BUILD="$(dirname "$0")/agent-build"
+    if [[ ! -x "$AGENT_BUILD" ]]; then
+        red "error: could not find agent-build at $AGENT_BUILD"
+        exit 1
+    fi
+    "$AGENT_BUILD"
 fi
 
 # ── Preflight: --branch only makes sense with a GitHub slug ───────────────────
@@ -255,6 +263,13 @@ else
     CONTAINER_CMD=(claude --dangerously-skip-permissions)
 fi
 
+# Ollama: default to gpt-oss model unless the user already passed --model
+if [[ "$BACKEND" == "ollama" ]] && ! $DROP_TO_SHELL; then
+    if [[ ! " ${PROMPT_ARGS[*]:-} " =~ " --model " ]]; then
+        CONTAINER_CMD+=(--model gpt-oss)
+    fi
+fi
+
 # ── Docker flags ──────────────────────────────────────────────────────────────
 DOCKER_ARGS=(
     --rm
@@ -269,24 +284,31 @@ DOCKER_ARGS=(
 [[ -n "$CLONE_REPO"   ]] && DOCKER_ARGS+=(--env "CLONE_REPO=$CLONE_REPO")
 [[ -n "$CLONE_BRANCH" ]] && DOCKER_ARGS+=(--env "CLONE_BRANCH=$CLONE_BRANCH")
 
-# ── Backend-specific config ───────────────────────────────────────────────────
-if [[ "$BACKEND" == "ollama" ]]; then
-    DOCKER_ARGS+=(
-        --env "ANTHROPIC_BASE_URL=$OLLAMA_URL"
-        --env "ANTHROPIC_API_KEY=ollama"
-    )
-elif [[ "$SKIP_AUTH" == false ]]; then
-    # Anthropic: mount host Claude credentials for the entrypoint to copy in.
-    # The native installer stores auth in ~/.local/share/claude in addition to
-    # the legacy ~/.claude and ~/.claude.json locations.
+# ── Claude config mounts (both backends) ─────────────────────────────────────
+# Mount host Claude config so Claude Code doesn't start in first-run setup mode
+# (theme picker, etc.). Skipped only if --no-auth is set.
+if [[ "$SKIP_AUTH" == false ]]; then
     DOCKER_ARGS+=(--volume "$HOME/.claude":/tmp/claude-host:ro)
     [[ -f "$HOME/.claude.json" ]] && \
         DOCKER_ARGS+=(--volume "$HOME/.claude.json":/tmp/claude-host.json:ro)
     [[ -d "$HOME/.local/share/claude" ]] && \
         DOCKER_ARGS+=(--volume "$HOME/.local/share/claude":/tmp/claude-local-share:ro)
+fi
 
-    # Extract OAuth credentials from macOS Keychain and pass to the container.
-    # The native installer stores the actual token in Keychain, not in any file.
+# ── Backend-specific config ───────────────────────────────────────────────────
+if [[ "$BACKEND" == "ollama" ]]; then
+    # Route inference to Ollama. ANTHROPIC_API_KEY is required by the SDK but
+    # unused — any non-empty value works.
+    # Note: we intentionally do NOT inject OAuth credentials here — having both
+    # an API key and a claude.ai session causes Claude Code to warn about auth conflict.
+    DOCKER_ARGS+=(
+        --env "ANTHROPIC_BASE_URL=$OLLAMA_URL"
+        --env "ANTHROPIC_API_KEY=ollama"
+    )
+elif [[ "$SKIP_AUTH" == false ]]; then
+    # Anthropic backend: extract OAuth token from macOS Keychain and pass to the
+    # container. The entrypoint writes it to ~/.claude/.credentials.json (the Linux
+    # auth location). On macOS the token lives in Keychain, not in any file on disk.
     if command -v security &>/dev/null; then
         _CLAUDE_CREDS="$(security find-generic-password \
             -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null || true)"
@@ -294,7 +316,6 @@ elif [[ "$SKIP_AUTH" == false ]]; then
             _CREDS_TMP="$(mktemp /tmp/claude-creds-XXXXXX)"
             printf '%s' "$_CLAUDE_CREDS" > "$_CREDS_TMP"
             DOCKER_ARGS+=(--volume "$_CREDS_TMP":/tmp/claude-credentials:ro)
-            # Clean up the temp file after docker exits
             trap "rm -f '$_CREDS_TMP'" EXIT
         fi
     fi

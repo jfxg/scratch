@@ -12,6 +12,9 @@
 #   AGENT_SANDBOX_DIR   Path to the docker/agent-sandbox directory containing
 #                       the Dockerfile. Required when running from ~/bin.
 #                       Set this in ~/.zshrc.local on each machine.
+#   DOCKER_CONTEXT      Docker context to use (e.g. "desktop-linux"). Respected
+#                       natively by the docker CLI. Must match the context used
+#                       by the agent script, or the built image won't be found.
 set -euo pipefail
 
 DOCKERFILE_DIR="${AGENT_SANDBOX_DIR:-$HOME/agent-sandbox}"
