@@ -36,6 +36,13 @@ if [[ -d /tmp/claude-local-share ]]; then
     cp -rp /tmp/claude-local-share/. "$HOME/.local/share/claude/"
 fi
 
+# ── Configure git credentials ─────────────────────────────────────────────────
+# If GH_TOKEN is set (injected by the agent script from the host's gh auth),
+# configure gh as git's credential helper so HTTPS pushes work transparently.
+if [[ -n "${GH_TOKEN:-}" ]]; then
+    git config --global credential.helper '!gh auth git-credential'
+fi
+
 # ── Determine working directory ───────────────────────────────────────────────
 # When cloning a repo, work inside /workspace/<reponame> so Claude's project
 # name matches the repo rather than showing the generic "workspace".
@@ -47,7 +54,7 @@ fi
 # ── Clone GitHub repo if requested ────────────────────────────────────────────
 # CLONE_REPO is set by the agent script when --repo owner/repo is passed.
 # We use gh repo clone so it picks up the host's gh auth automatically.
-if [[ -n "${CLONE_REPO:-}" ]]; then
+if [[ -n "${CLONE_REPO:-}" ]] && [[ ! -d "$WORK_DIR/.git" ]]; then
     BRANCH_ARGS=()
     [[ -n "${CLONE_BRANCH:-}" ]] && BRANCH_ARGS+=(-- --branch "$CLONE_BRANCH")
     gh repo clone "$CLONE_REPO" "$WORK_DIR" "${BRANCH_ARGS[@]}"

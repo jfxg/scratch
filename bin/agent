@@ -11,8 +11,9 @@
 #   agent ls
 #
 # Options:
-#   --name <name>   Create or resume a named workspace (e.g. "my-project").
-#                   If the workspace already exists, it is resumed.
+#   --name <label>  Optional short label for the session (e.g. "infra"). Combined with
+#                   the date and project to form the full session ID shown on startup.
+#   --resume <id>   Resume an existing session by its full session ID.
 #   --ollama [url]  Use Ollama backend. URL defaults to $OLLAMA_BASE_URL if omitted.
 #   --repo <slug>   Clone a GitHub repo (e.g. "owner/repo") into a fresh /workspace.
 #                   Or pass a local path to mount an existing directory instead.
@@ -23,9 +24,9 @@
 #   -h, --help      Show this help message
 #
 # Subcommands:
-#   ls              List all workspaces in AGENT_WORKSPACES, newest first.
-#   rm <name>       Remove a specific workspace by name.
-#   clean [--days N] Remove unnamed (timestamped) workspaces older than N days (default: 7).
+#   ls              List all sessions, newest first.
+#   rm <id>         Remove a session and its workspace by session ID.
+#   clean [--days N] Remove unnamed sessions older than N days (default: 7).
 #                   Shows what will be deleted and asks for confirmation.
 #
 # To build or rebuild the image, run: agent-build
@@ -54,6 +55,7 @@ MOUNT_REPO=""
 CLONE_REPO=""
 CLONE_BRANCH=""
 SESSION_NAME=""
+RESUME_ID=""
 DROP_TO_SHELL=false
 SKIP_AUTH=false
 BACKEND="anthropic"
@@ -63,33 +65,40 @@ PROMPT_ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         ls)
-            # List workspaces, newest first
-            if [[ ! -d "$WORKSPACES_DIR" ]]; then
-                echo "No workspaces yet (${WORKSPACES_DIR} does not exist)."
+            SESSIONS_DIR_LS="$WORKSPACES_DIR/.agent-sandbox"
+            if [[ ! -d "$SESSIONS_DIR_LS" ]] || [[ -z "$(ls "$SESSIONS_DIR_LS"/*.agent 2>/dev/null)" ]]; then
+                echo "No sessions yet."
                 exit 0
             fi
-            printf '\n%-30s  %s\n' "NAME" "LAST MODIFIED"
-            printf '%-30s  %s\n' "------------------------------" "--------------------"
-            while IFS= read -r dir; do
-                name="$(basename "$dir")"
-                modified="$(date -r "$dir" '+%Y-%m-%d %H:%M')"
-                printf '%-30s  %s\n' "$name" "$modified"
-            done < <(ls -dt "$WORKSPACES_DIR"/*/ 2>/dev/null)
+            printf '\n%-50s  %s\n' "SESSION ID" "LAST MODIFIED"
+            printf '%-50s  %s\n' "--------------------------------------------------" "--------------------"
+            while IFS= read -r f; do
+                id="$(basename "$f" .agent)"
+                modified="$(date -r "$f" '+%Y-%m-%d %H:%M')"
+                printf '%-50s  %s\n' "$id" "$modified"
+            done < <(ls -t "$SESSIONS_DIR_LS/"*.agent 2>/dev/null)
             echo ""
             exit 0
             ;;
         rm)
-            [[ -z "${2:-}" ]] && { red "error: rm requires a workspace name"; exit 1; }
-            TARGET="$WORKSPACES_DIR/$2"
-            if [[ ! -d "$TARGET" ]]; then
-                red "error: workspace not found: $TARGET"
+            [[ -z "${2:-}" ]] && { red "error: rm requires a session ID"; exit 1; }
+            RM_FILE="$WORKSPACES_DIR/.agent-sandbox/$2.agent"
+            if [[ ! -f "$RM_FILE" ]]; then
+                red "error: session not found: $2"
                 exit 1
             fi
-            printf 'Remove %s? [y/N] ' "$TARGET"
+            # shellcheck source=/dev/null
+            source "$RM_FILE"
+            echo "Session  : $2"
+            echo "Workspace: ${WORKSPACE_HOST:-unknown}"
+            printf 'Remove? [y/N] '
             read -r reply
             if [[ "$reply" =~ ^[Yy]$ ]]; then
-                rm -rf "$TARGET"
-                green "Removed $TARGET"
+                rm -f "$RM_FILE"
+                if [[ "${WORKSPACE_MANAGED:-false}" == true && -d "${WORKSPACE_HOST:-}" ]]; then
+                    rm -rf "$WORKSPACE_HOST"
+                fi
+                green "Removed session $2"
             else
                 dim "Cancelled."
             fi
@@ -99,36 +108,44 @@ while [[ $# -gt 0 ]]; do
             shift
             CLEAN_DAYS=7
             [[ -n "${1:-}" && "$1" == "--days" ]] && { CLEAN_DAYS="$2"; shift 2; }
-            if [[ ! -d "$WORKSPACES_DIR" ]]; then
-                echo "No workspaces yet."
+            SESSIONS_DIR_CLEAN="$WORKSPACES_DIR/.agent-sandbox"
+            if [[ ! -d "$SESSIONS_DIR_CLEAN" ]]; then
+                echo "No sessions yet."
                 exit 0
             fi
-            # Collect unnamed workspaces (YYYYMMDD-HHMMSS-XXXX) older than CLEAN_DAYS.
+            # Collect unnamed sessions (name portion is "unnamed") older than CLEAN_DAYS.
             # Note: find -mtime +N matches files older than N full 24-hour periods, so
             # we skip the -mtime filter entirely when CLEAN_DAYS=0 to match everything.
             STALE=()
-            FIND_ARGS=("$WORKSPACES_DIR" -mindepth 1 -maxdepth 1 -type d
-                -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*')
+            FIND_ARGS=("$SESSIONS_DIR_CLEAN" -mindepth 1 -maxdepth 1 -type f -name '*-unnamed.agent')
             [[ "$CLEAN_DAYS" -gt 0 ]] && FIND_ARGS+=(-mtime +"$CLEAN_DAYS")
-            while IFS= read -r d; do
-                STALE+=("$d")
+            while IFS= read -r f; do
+                STALE+=("$f")
             done < <(find "${FIND_ARGS[@]}" 2>/dev/null | sort)
             if [[ ${#STALE[@]} -eq 0 ]]; then
-                green "No unnamed workspaces older than ${CLEAN_DAYS} days."
+                green "No unnamed sessions older than ${CLEAN_DAYS} days."
                 exit 0
             fi
             echo ""
-            yellow "Unnamed workspaces older than ${CLEAN_DAYS} days:"
-            for d in "${STALE[@]}"; do
-                modified="$(date -r "$d" '+%Y-%m-%d %H:%M')"
-                printf '  %-30s  (%s)\n' "$(basename "$d")" "$modified"
+            yellow "Unnamed sessions older than ${CLEAN_DAYS} days:"
+            for f in "${STALE[@]}"; do
+                id="$(basename "$f" .agent)"
+                modified="$(date -r "$f" '+%Y-%m-%d %H:%M')"
+                printf '  %-50s  (%s)\n' "$id" "$modified"
             done
             echo ""
-            printf 'Delete %d workspace(s)? [y/N] ' "${#STALE[@]}"
+            printf 'Delete %d session(s)? [y/N] ' "${#STALE[@]}"
             read -r reply
             if [[ "$reply" =~ ^[Yy]$ ]]; then
-                for d in "${STALE[@]}"; do rm -rf "$d"; done
-                green "Removed ${#STALE[@]} workspace(s)."
+                for f in "${STALE[@]}"; do
+                    # shellcheck source=/dev/null
+                    source "$f"
+                    if [[ "${WORKSPACE_MANAGED:-false}" == true && -d "${WORKSPACE_HOST:-}" ]]; then
+                        rm -rf "$WORKSPACE_HOST"
+                    fi
+                    rm -f "$f"
+                done
+                green "Removed ${#STALE[@]} session(s)."
             else
                 dim "Cancelled."
             fi
@@ -137,6 +154,11 @@ while [[ $# -gt 0 ]]; do
         --name)
             [[ -z "${2:-}" ]] && { red "error: --name requires a value"; exit 1; }
             SESSION_NAME="$2"
+            shift 2
+            ;;
+        --resume)
+            [[ -z "${2:-}" ]] && { red "error: --resume requires a session ID"; exit 1; }
+            RESUME_ID="$2"
             shift 2
             ;;
         --ollama)
@@ -226,32 +248,64 @@ if [[ -n "$CLONE_BRANCH" && -z "$CLONE_REPO" ]]; then
     exit 1
 fi
 
-# ── Workspace setup ───────────────────────────────────────────────────────────
-if [[ -n "$MOUNT_REPO" ]]; then
-    WORKSPACE_HOST="$MOUNT_REPO"
-    dim "==> Mounting existing repo: $WORKSPACE_HOST"
-elif [[ -n "$CLONE_REPO" ]]; then
-    mkdir -p "$WORKSPACES_DIR"
-    if [[ -n "$SESSION_NAME" ]]; then
-        WORKSPACE_HOST="$WORKSPACES_DIR/$SESSION_NAME"
-        mkdir -p "$WORKSPACE_HOST"
-    else
-        WORKSPACE_HOST="$(mktemp -d "$WORKSPACES_DIR/$(date +%Y%m%d-%H%M%S)-XXXX")"
+# ── Preflight: --resume is mutually exclusive with --name / --repo / --branch ─
+if [[ -n "$RESUME_ID" && ( -n "$SESSION_NAME" || -n "$CLONE_REPO" || -n "$MOUNT_REPO" || -n "$CLONE_BRANCH" ) ]]; then
+    red "error: --resume cannot be combined with --name, --repo, or --branch"
+    exit 1
+fi
+
+# ── Session management ────────────────────────────────────────────────────────
+mkdir -p "$WORKSPACES_DIR"
+SESSIONS_DIR="$WORKSPACES_DIR/.agent-sandbox"
+mkdir -p "$SESSIONS_DIR"
+
+SESSION_ID=""
+WORKSPACE_HOST=""
+
+if [[ -n "$RESUME_ID" ]]; then
+    SESSION_FILE="$SESSIONS_DIR/$RESUME_ID.agent"
+    if [[ ! -f "$SESSION_FILE" ]]; then
+        red "error: session not found: $RESUME_ID"
+        exit 1
     fi
-    dim "==> Will clone $CLONE_REPO${CLONE_BRANCH:+@$CLONE_BRANCH} into: $WORKSPACE_HOST"
-elif [[ -n "$SESSION_NAME" ]]; then
-    mkdir -p "$WORKSPACES_DIR"
-    WORKSPACE_HOST="$WORKSPACES_DIR/$SESSION_NAME"
-    if [[ -d "$WORKSPACE_HOST" ]]; then
-        dim "==> Resuming workspace: $WORKSPACE_HOST"
-    else
-        mkdir -p "$WORKSPACE_HOST"
-        dim "==> Created workspace: $WORKSPACE_HOST"
-    fi
+    SESSION_ID="$RESUME_ID"
+    # shellcheck source=/dev/null
+    source "$SESSION_FILE"
+    dim "==> Resuming session: $SESSION_ID"
 else
-    mkdir -p "$WORKSPACES_DIR"
-    WORKSPACE_HOST="$(mktemp -d "$WORKSPACES_DIR/$(date +%Y%m%d-%H%M%S)-XXXX")"
-    dim "==> Created fresh workspace: $WORKSPACE_HOST"
+    # New session: derive project + name, generate ID
+    if [[ -n "$CLONE_REPO" ]]; then
+        _project="${CLONE_REPO##*/}"
+    elif [[ -n "$MOUNT_REPO" ]]; then
+        _project="$(basename "$MOUNT_REPO")"
+    else
+        _project="workspace"
+    fi
+    _label="${SESSION_NAME:-unnamed}"
+    SESSION_ID="$(date +%Y%m%d-%H%M%S)-${_project}-${_label}"
+
+    if [[ -n "$MOUNT_REPO" ]]; then
+        WORKSPACE_HOST="$MOUNT_REPO"
+        _managed=false
+        dim "==> Mounting repo: $WORKSPACE_HOST"
+    else
+        WORKSPACE_HOST="$WORKSPACES_DIR/$SESSION_ID"
+        mkdir -p "$WORKSPACE_HOST"
+        _managed=true
+        if [[ -n "$CLONE_REPO" ]]; then
+            dim "==> Will clone $CLONE_REPO${CLONE_BRANCH:+@$CLONE_BRANCH} into: $WORKSPACE_HOST"
+        else
+            dim "==> Created workspace: $WORKSPACE_HOST"
+        fi
+    fi
+
+    # Save session file for future resumes
+    {
+        echo "WORKSPACE_HOST=$WORKSPACE_HOST"
+        echo "WORKSPACE_MANAGED=$_managed"
+        [[ -n "$CLONE_REPO"   ]] && echo "CLONE_REPO=$CLONE_REPO"
+        [[ -n "$CLONE_BRANCH" ]] && echo "CLONE_BRANCH=$CLONE_BRANCH"
+    } > "$SESSIONS_DIR/$SESSION_ID.agent"
 fi
 
 # ── Container command ─────────────────────────────────────────────────────────
@@ -352,6 +406,7 @@ else
     dim "    backend   : anthropic"
 fi
 [[ -n "$CLONE_REPO" ]] && dim "    clone     : $CLONE_REPO${CLONE_BRANCH:+@$CLONE_BRANCH}"
+dim "    session   : $SESSION_ID"
 dim "    workspace : $WORKSPACE_HOST"
 dim "    image     : $IMAGE_NAME"
 dim "    command   : ${CONTAINER_CMD[*]}"
@@ -361,10 +416,6 @@ docker run "${DOCKER_ARGS[@]}" "$IMAGE_NAME" "${CONTAINER_CMD[@]}"
 
 # ── Post-exit summary ─────────────────────────────────────────────────────────
 echo ""
-if [[ -z "$MOUNT_REPO" ]]; then
-    green "==> Session ended. Workspace preserved at:"
-    echo "    $WORKSPACE_HOST"
-else
-    green "==> Session ended."
-fi
+green "==> Session ended."
+dim "    To resume: agent --resume $SESSION_ID"
 echo ""
