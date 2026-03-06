@@ -36,13 +36,6 @@ if [[ -d /tmp/claude-local-share ]]; then
     cp -rp /tmp/claude-local-share/. "$HOME/.local/share/claude/"
 fi
 
-# ── Configure git credentials ─────────────────────────────────────────────────
-# If GH_TOKEN is set (injected by the agent script from the host's gh auth),
-# configure gh as git's credential helper so HTTPS pushes work transparently.
-if [[ -n "${GH_TOKEN:-}" ]]; then
-    git config --global credential.helper '!gh auth git-credential'
-fi
-
 # ── Determine working directory ───────────────────────────────────────────────
 # When cloning a repo, work inside /workspace/<reponame> so Claude's project
 # name matches the repo rather than showing the generic "workspace".

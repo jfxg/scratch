@@ -386,7 +386,16 @@ fi
 # it explicitly and pass it as GH_TOKEN, which both gh and git respect.
 if command -v gh &>/dev/null; then
     _GH_TOKEN="$(gh auth token 2>/dev/null || true)"
-    [[ -n "$_GH_TOKEN" ]] && DOCKER_ARGS+=(--env "GH_TOKEN=$_GH_TOKEN")
+    if [[ -n "$_GH_TOKEN" ]]; then
+        DOCKER_ARGS+=(--env "GH_TOKEN=$_GH_TOKEN")
+        # Configure gh as git's credential helper via env vars so we don't need
+        # to write to ~/.gitconfig (which is mounted read-only from the host).
+        DOCKER_ARGS+=(
+            --env "GIT_CONFIG_COUNT=1"
+            --env "GIT_CONFIG_KEY_0=credential.helper"
+            --env "GIT_CONFIG_VALUE_0=!gh auth git-credential"
+        )
+    fi
 fi
 
 # Mount zsh config — these override the defaults installed by oh-my-zsh in the image
