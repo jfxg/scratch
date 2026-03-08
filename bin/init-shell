@@ -60,10 +60,18 @@ check_file() {
         return
     fi
 
-    if ! diff -q "$src" "$dest" > /dev/null 2>&1; then
+    _content_differs=false
+    _mode_differs=false
+    diff -q "$src" "$dest" > /dev/null 2>&1 || _content_differs=true
+    { [[ -x "$src" && ! -x "$dest" ]] || [[ ! -x "$src" && -x "$dest" ]]; } && _mode_differs=true
+
+    if $_content_differs || $_mode_differs; then
         yellow "  CHANGED  $dest"
-        diff --unified=3 "$dest" "$src" | tail -n +3 | \
-            sed 's/^+/\t\033[0;32m+\033[0m/; s/^-/\t\033[0;31m-\033[0m/; s/^@/\t\033[2m@\033[0m/' || true
+        if $_content_differs; then
+            diff --unified=3 "$dest" "$src" | tail -n +3 | \
+                sed 's/^+/\t\033[0;32m+\033[0m/; s/^-/\t\033[0;31m-\033[0m/; s/^@/\t\033[2m@\033[0m/' || true
+        fi
+        $_mode_differs && dim "           (execute bit changed)"
         CHANGES=$((CHANGES + 1))
         if [[ "$DRY_RUN" == false ]]; then
             cp -p "$src" "$dest"
@@ -95,11 +103,6 @@ check_dir() {
     if [[ "$any" == false ]]; then
         dim "  skip     $(relpath "$src") (empty)"
     fi
-
-    # If applying, sync any deletions too
-    if [[ "$DRY_RUN" == false && -d "$dest" ]]; then
-        rsync -a --delete "$src/" "$dest/"
-    fi
 }
 
 relpath() { echo "${1#$REPO/}"; }
@@ -127,6 +130,8 @@ if [[ ! -d "$HOME_DIR/bin" ]]; then
     fi
 fi
 check_dir "$REPO/bin" "$HOME_DIR/bin"
+check_file "$REPO/agent-sandbox/bin/agent"       "$HOME_DIR/bin/agent"
+check_file "$REPO/agent-sandbox/bin/agent-build" "$HOME_DIR/bin/agent-build"
 
 blue "-- PATH --"
 if grep -q '\$HOME/bin\|~/bin' "$HOME_DIR/.zshrc" 2>/dev/null; then
@@ -154,20 +159,7 @@ else
 fi
 
 blue "-- Agent sandbox --"
-check_dir "$REPO/docker/agent-sandbox" "$HOME_DIR/agent-sandbox"
-
-blue "-- AGENT_SANDBOX_DIR --"
-if grep -q 'AGENT_SANDBOX_DIR' "$HOME_DIR/.zshrc.local" 2>/dev/null || \
-   grep -q 'AGENT_SANDBOX_DIR' "$HOME_DIR/.zshrc" 2>/dev/null; then
-    green "  ok       AGENT_SANDBOX_DIR is set"
-else
-    yellow "  MISSING  AGENT_SANDBOX_DIR not set"
-    CHANGES=$((CHANGES + 1))
-    if [[ "$DRY_RUN" == false ]]; then
-        printf '\nexport AGENT_SANDBOX_DIR="$HOME/agent-sandbox"\n' >> "$HOME_DIR/.zshrc.local"
-        green "           → added to ~/.zshrc.local"
-    fi
-fi
+check_dir "$REPO/agent-sandbox/docker" "$HOME_DIR/.agent-sandbox/docker"
 
 blue "-- oh-my-zsh custom themes --"
 check_dir "$REPO/shell/oh-my-zsh/custom/themes" "$HOME_DIR/.oh-my-zsh/custom/themes"

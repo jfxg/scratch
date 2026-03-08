@@ -9,15 +9,15 @@
 #   -h, --help   Show this help message
 #
 # Environment:
-#   AGENT_SANDBOX_DIR   Path to the docker/agent-sandbox directory containing
-#                       the Dockerfile. Required when running from ~/bin.
-#                       Set this in ~/.zshrc.local on each machine.
+#   AGENT_SANDBOX_DIR   Path to the directory containing the Dockerfile.
+#                       Defaults to ~/.agent-sandbox/docker (where the docker/
+#                       files should be copied on installation).
 #   DOCKER_CONTEXT      Docker context to use (e.g. "desktop-linux"). Respected
 #                       natively by the docker CLI. Must match the context used
 #                       by the agent script, or the built image won't be found.
 set -euo pipefail
 
-DOCKERFILE_DIR="${AGENT_SANDBOX_DIR:-$HOME/agent-sandbox}"
+DOCKERFILE_DIR="${AGENT_SANDBOX_DIR:-$HOME/.agent-sandbox/docker}"
 IMAGE_NAME="agent-sandbox"
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -47,7 +47,8 @@ fi
 
 if [[ ! -f "$DOCKERFILE_DIR/Dockerfile" ]]; then
     red "error: Dockerfile not found at $DOCKERFILE_DIR"
-    red "  set AGENT_SANDBOX_DIR to the docker/agent-sandbox directory in your repo"
+    red "  copy the docker/ files from agent-sandbox to ~/.agent-sandbox/docker/"
+    red "  or set AGENT_SANDBOX_DIR to override the location"
     exit 1
 fi
 

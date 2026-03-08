@@ -5,8 +5,8 @@ Personal scripts, dotfiles, and tooling — including an isolated Docker sandbox
 ## Structure
 
 ```
+agent-sandbox/              Standalone Docker sandbox for Claude Code (see agent-sandbox/README.md)
 bin/                        Scripts, synced to ~/bin via init-shell
-docker/agent-sandbox/       Docker image for isolated Claude Code agent sessions
 shell/                      Zsh config and Oh My Zsh customisations
 git/                        Git global config and ignore rules
 ssh/                        SSH client config
@@ -20,8 +20,8 @@ vim/                        Vim config
 | `backup-shell` | Copies dotfiles from `$HOME` into this repo |
 | `init-shell` | Applies repo dotfiles to `$HOME` (dry-run by default, `--apply` to write) |
 | `sync-shell-remote` | Compares and syncs shell config to a remote host over SSH (reads from `$HOME`, safe to run from anywhere) |
-| `agent` | Spins up an isolated Docker sandbox and runs Claude Code with full permissions |
-| `agent-build` | Builds (or rebuilds) the `agent-sandbox` Docker image |
+| `agent` | Spins up an isolated Docker sandbox and runs Claude Code with full permissions (from `agent-sandbox/`) |
+| `agent-build` | Builds (or rebuilds) the `agent-sandbox` Docker image (from `agent-sandbox/`) |
 
 ## Dotfiles
 
@@ -67,4 +67,4 @@ agent --repo ~/code/foo  # mount an existing repo instead of a fresh workspace
 agent --shell            # drop into a zsh shell for debugging
 ```
 
-Workspaces are preserved at `~/agent-workspaces/` after the container exits.
+Sessions and workspaces are preserved at `~/.agent-sandbox/<session-id>/` after the container exits. See [agent-sandbox/README.md](agent-sandbox/README.md) for full usage.
