@@ -336,6 +336,7 @@ DOCKER_ARGS=(
     --name "agent-$(date +%s)"
     --volume "$WORKSPACE_HOST":/workspace
     --workdir /workspace
+    --env "COLORTERM=truecolor"
 )
 
 # ── GitHub clone config ───────────────────────────────────────────────────────
