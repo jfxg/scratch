@@ -5,7 +5,6 @@ Personal scripts, dotfiles, and tooling — including an isolated Docker sandbox
 ## Structure
 
 ```
-agent-sandbox/              Standalone Docker sandbox for Claude Code (see agent-sandbox/README.md)
 bin/                        Scripts, synced to ~/bin via init-shell
 shell/                      Zsh config and Oh My Zsh customisations
 git/                        Git global config and ignore rules
@@ -20,8 +19,8 @@ vim/                        Vim config
 | `backup-shell` | Copies dotfiles from `$HOME` into this repo |
 | `init-shell` | Applies repo dotfiles to `$HOME` (dry-run by default, `--apply` to write) |
 | `sync-shell-remote` | Compares and syncs shell config to a remote host over SSH (reads from `$HOME`, safe to run from anywhere) |
-| `agent` | Spins up an isolated Docker sandbox and runs Claude Code with full permissions (from `agent-sandbox/`) |
-| `agent-build` | Builds (or rebuilds) the `agent-sandbox` Docker image (from `agent-sandbox/`) |
+| `agent` | Spins up an isolated Docker sandbox and runs Claude Code with full permissions (from [jfxg/agent-sandbox](https://github.com/jfxg/agent-sandbox)) |
+| `agent-build` | Builds (or rebuilds) the `agent-sandbox` Docker image (from [jfxg/agent-sandbox](https://github.com/jfxg/agent-sandbox)) |
 
 ## Dotfiles
 
@@ -57,7 +56,7 @@ sync-shell-remote --apply user@host  # sync to remote
 
 ## Agent sandbox
 
-Runs Claude Code in an isolated Docker container with full permissions but no access to your host filesystem beyond what's explicitly mounted.
+Runs Claude Code in an isolated Docker container with full permissions but no access to your host filesystem beyond what's explicitly mounted. Maintained in the standalone [jfxg/agent-sandbox](https://github.com/jfxg/agent-sandbox) repo; `init-shell` clones it to `~/projects/agent-sandbox` and installs the scripts.
 
 ```bash
 agent-build              # build the image (once, or after editing the Dockerfile)
@@ -67,4 +66,4 @@ agent --repo ~/code/foo  # mount an existing repo instead of a fresh workspace
 agent --shell            # drop into a zsh shell for debugging
 ```
 
-Sessions and workspaces are preserved at `~/.agent-sandbox/<session-id>/` after the container exits. See [agent-sandbox/README.md](agent-sandbox/README.md) for full usage.
+Sessions and workspaces are preserved at `~/.agent-sandbox/sessions/<session-id>/` after the container exits. See [jfxg/agent-sandbox](https://github.com/jfxg/agent-sandbox) for full usage.
