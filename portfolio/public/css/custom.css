@@ -1,0 +1,138 @@
+/* ── Variables ─────────────────────────────────────────────── */
+:root {
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --card-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.14);
+  --transition-speed: 0.18s;
+}
+
+/* ── Site header / nav ─────────────────────────────────────── */
+.site-header {
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.site-title {
+  font-weight: 700;
+  font-size: 1.1rem;
+  text-decoration: none;
+}
+
+/* ── Site footer ───────────────────────────────────────────── */
+.site-footer {
+  border-top: 1px solid var(--pico-muted-border-color);
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+  margin-top: 4rem;
+  color: var(--pico-muted-color);
+}
+
+/* ── Homepage intro ────────────────────────────────────────── */
+.intro {
+  padding: 3.5rem 0 2rem;
+}
+
+.intro h1 {
+  margin-bottom: 0.4rem;
+}
+
+.intro .tagline {
+  font-size: 1.15rem;
+  color: var(--pico-muted-color);
+  margin-bottom: 1.5rem;
+}
+
+.intro-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ── Dashboard sections ────────────────────────────────────── */
+.dashboard-section {
+  margin-bottom: 3.5rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  padding-bottom: 0.4rem;
+}
+
+.section-header h2 {
+  margin: 0;
+}
+
+/* ── Card grid ─────────────────────────────────────────────── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.card {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.card article {
+  height: 100%;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow var(--transition-speed) ease,
+              transform var(--transition-speed) ease;
+  margin: 0;
+}
+
+.card:hover article {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-2px);
+}
+
+.card article h3 {
+  margin-bottom: 0.4rem;
+}
+
+.card article p {
+  color: var(--pico-muted-color);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* ── Post / article ────────────────────────────────────────── */
+.post {
+  max-width: 720px;
+}
+
+.post-meta {
+  color: var(--pico-muted-color);
+}
+
+/* ── Tags ──────────────────────────────────────────────────── */
+.tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 99px;
+  background: var(--pico-secondary-background);
+  color: var(--pico-secondary);
+  margin-right: 0.25rem;
+}
+
+/* ── Links page ────────────────────────────────────────────── */
+.links-list {
+  list-style: none;
+  padding: 0;
+}
+
+.links-list li {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.links-list li:last-child {
+  border-bottom: none;
+}
