@@ -9,4 +9,9 @@ services:
       - ./data:/app/data:ro
     environment:
       PORT: 3000
+    labels:
+      - "traefik.http.routers.portfolio.rule=Host(`john.gaquin.dev`)"
+      - "traefik.http.routers.portfolio.entrypoints=https"
+      - "traefik.http.routers.portfolio.tls.certresolver=letsencrypt"
+      - "traefik.http.services.portfolio.loadbalancer.server.port=3000"
     restart: unless-stopped
