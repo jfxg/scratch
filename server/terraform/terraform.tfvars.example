@@ -1,0 +1,22 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit it.
+
+# Target server — use ssh://user@host to run Terraform from your laptop
+# against a remote Docker daemon. Use unix:///var/run/docker.sock if running
+# Terraform directly on the server.
+docker_host = "ssh://john@192.168.1.X"
+
+# Absolute path on the Docker host where Terraform should upload/copy
+# traefik.yml and dynamic.yml before starting the container.
+traefik_config_dir = "/opt/scratch/server/traefik"
+
+# Portainer
+portainer_domain = "portainer.example.com"
+
+# Optional: set to a domain to enable the Traefik dashboard at that address.
+# Leave empty ("") to disable.
+traefik_dashboard_domain = ""
+
+# TLS / Cloudflare
+letsencrypt_email    = "you@example.com"
+cloudflare_api_token = "your-cloudflare-api-token"

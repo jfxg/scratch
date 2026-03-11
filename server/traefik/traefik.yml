@@ -1,0 +1,75 @@
+# Traefik static configuration.
+#
+# This file is bind-mounted into the Traefik container at /etc/traefik/traefik.yml
+# by the Terraform config in server/terraform/traefik.tf.
+#
+# The Let's Encrypt ACME email is passed as a CLI arg by Terraform so this
+# file stays a static, secret-free document in the repository.
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+# --- Entry points -----------------------------------------------------------
+
+entryPoints:
+  http:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: https
+          scheme: https
+          permanent: true
+  https:
+    address: ":443"
+
+# --- Certificate resolver (Cloudflare DNS-01) --------------------------------
+#
+# CF_DNS_API_TOKEN is injected as an environment variable by the Terraform
+# container config. The ACME email is passed via CLI arg.
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      storage: /letsencrypt/acme.json
+      dnsChallenge:
+        provider: cloudflare
+        # Use Cloudflare's resolvers so newly-created TXT records are visible
+        # immediately during the DNS-01 challenge.
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+
+# --- Providers ---------------------------------------------------------------
+
+providers:
+  # Docker label-based routing. Containers must opt in with traefik.enable=true
+  # and must be connected to the 'traefik' network.
+  docker:
+    exposedByDefault: false
+    network: traefik
+
+  # Dynamic configuration for routes not discoverable via Docker labels
+  # (e.g. non-containerised services, host-level apps like AdGuard Home).
+  file:
+    directory: /dynamic
+    watch: true
+
+# --- API / Dashboard ---------------------------------------------------------
+#
+# The dashboard is disabled by default. Enable it by setting
+# traefik_dashboard_domain in terraform.tfvars — this adds the appropriate
+# Traefik labels to the Traefik container so the dashboard is reachable at
+# that domain over HTTPS.
+
+api:
+  dashboard: true
+  insecure: false
+
+# --- Logging -----------------------------------------------------------------
+
+log:
+  level: INFO
+
+accessLog: {}

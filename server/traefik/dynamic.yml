@@ -1,0 +1,32 @@
+# Traefik dynamic configuration for services not discoverable via Docker labels.
+#
+# This file is bind-mounted into the Traefik container at /dynamic/dynamic.yml
+# and watched for changes (no restart needed to pick up edits).
+#
+# Use this for:
+#   - Services running directly on the host (not in Docker)
+#   - Services on a different machine on the local network
+#
+# Docker-based services are configured via their own Docker labels — they
+# do not need entries here.
+#
+# Backend URL patterns:
+#   - Host-level services:      http://host.docker.internal:<port>
+#   - Other network machines:   http://<local-ip>:<port>
+#   - Docker containers:        http://<container-name>:<port>
+
+http:
+  routers:
+    adguard:
+      rule: "Host(`adguard.home.gaquin.dev`)"
+      entrypoints:
+        - https
+      service: adguard-service
+      tls:
+        certresolver: letsencrypt
+
+  services:
+    adguard-service:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:3080"
