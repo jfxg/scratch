@@ -69,8 +69,7 @@ resource "docker_container" "traefik" {
 
   # On Linux, host.docker.internal is not automatically resolvable inside
   # containers (unlike Docker Desktop on Mac/Windows). This adds the mapping
-  # so dynamic.yml can use host.docker.internal to reach host-level services
-  # like AdGuard Home.
+  # so dynamic.yml can use host.docker.internal to reach host-level services.
   host {
     host = "host.docker.internal"
     ip   = "host-gateway"
@@ -81,36 +80,23 @@ resource "docker_container" "traefik" {
     value = "true"
   }
 
-  # Traefik dashboard — only created if traefik_dashboard_domain is set
-  dynamic "labels" {
-    for_each = var.traefik_dashboard_domain != "" ? [1] : []
-    content {
-      label = "traefik.http.routers.traefik-dashboard.rule"
-      value = "Host(`${var.traefik_dashboard_domain}`)"
-    }
+  labels {
+    label = "traefik.http.routers.traefik-dashboard.rule"
+    value = "Host(`${local.traefik_domain}`)"
   }
 
-  dynamic "labels" {
-    for_each = var.traefik_dashboard_domain != "" ? [1] : []
-    content {
-      label = "traefik.http.routers.traefik-dashboard.entrypoints"
-      value = "https"
-    }
+  labels {
+    label = "traefik.http.routers.traefik-dashboard.entrypoints"
+    value = "https"
   }
 
-  dynamic "labels" {
-    for_each = var.traefik_dashboard_domain != "" ? [1] : []
-    content {
-      label = "traefik.http.routers.traefik-dashboard.tls.certresolver"
-      value = "letsencrypt"
-    }
+  labels {
+    label = "traefik.http.routers.traefik-dashboard.tls.certresolver"
+    value = "letsencrypt"
   }
 
-  dynamic "labels" {
-    for_each = var.traefik_dashboard_domain != "" ? [1] : []
-    content {
-      label = "traefik.http.routers.traefik-dashboard.service"
-      value = "api@internal"
-    }
+  labels {
+    label = "traefik.http.routers.traefik-dashboard.service"
+    value = "api@internal"
   }
 }

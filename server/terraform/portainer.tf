@@ -30,7 +30,7 @@ resource "docker_container" "portainer" {
 
   labels {
     label = "traefik.http.routers.portainer.rule"
-    value = "Host(`${var.portainer_domain}`)"
+    value = "Host(`${local.portainer_domain}`)"
   }
 
   labels {

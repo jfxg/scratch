@@ -1,6 +1,7 @@
 # Terraform state — contains secrets, never commit
 terraform.tfstate
 terraform.tfstate.backup
+terraform.tfstate.d/
 .terraform/
 .terraform.lock.hcl
 

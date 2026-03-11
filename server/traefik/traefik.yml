@@ -58,10 +58,8 @@ providers:
 
 # --- API / Dashboard ---------------------------------------------------------
 #
-# The dashboard is disabled by default. Enable it by setting
-# traefik_dashboard_domain in terraform.tfvars — this adds the appropriate
-# Traefik labels to the Traefik container so the dashboard is reachable at
-# that domain over HTTPS.
+# The dashboard is always enabled and routed to traefik.<server_domain> via
+# labels on the Traefik container (see terraform/traefik.tf).
 
 api:
   dashboard: true

@@ -15,18 +15,23 @@
 #   - Other network machines:   http://<local-ip>:<port>
 #   - Docker containers:        http://<container-name>:<port>
 
-http:
-  routers:
-    adguard:
-      rule: "Host(`adguard.home.gaquin.dev`)"
-      entrypoints:
-        - https
-      service: adguard-service
-      tls:
-        certresolver: letsencrypt
-
-  services:
-    adguard-service:
-      loadBalancer:
-        servers:
-          - url: "http://host.docker.internal:3080"
+# Add environment-specific routes here. This file is hot-reloaded by Traefik
+# — no container restart needed after editing.
+#
+# Example — host-level service (e.g. AdGuard Home on the Docker host):
+#
+# http:
+#   routers:
+#     adguard:
+#       rule: "Host(`adguard.example.com`)"
+#       entrypoints:
+#         - https
+#       service: adguard-service
+#       tls:
+#         certresolver: letsencrypt
+#
+#   services:
+#     adguard-service:
+#       loadBalancer:
+#         servers:
+#           - url: "http://host.docker.internal:3080"

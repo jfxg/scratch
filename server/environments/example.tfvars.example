@@ -1,0 +1,22 @@
+# Copy this file to <env>.tfvars and fill in your values.
+# Deploy with: make deploy ENV=<env>
+#
+# The ENV name becomes a Terraform workspace, so each environment
+# gets isolated state. Use a short, descriptive name (e.g. home, lab, vps).
+
+# Base domain for this server. Subdomains are derived automatically:
+#   portainer.<server_domain>  → Portainer UI
+#   traefik.<server_domain>    → Traefik dashboard
+# Also used as the SSH hostname for remote Docker access.
+server_domain = "home.example.com"
+
+# SSH user on the target server.
+docker_user = "john"
+
+# Absolute path on the Docker host where Terraform should upload traefik.yml
+# and dynamic.yml. Must be writable by docker_user.
+traefik_config_dir = "/opt/traefik"
+
+# TLS / Cloudflare
+letsencrypt_email    = "you@example.com"
+cloudflare_api_token = "your-cloudflare-api-token"

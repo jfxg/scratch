@@ -1,0 +1,5 @@
+# Actual environment configs contain secrets — never commit them.
+# Committed: *.tfvars.example  (safe templates)
+# Ignored:   *.tfvars          (real values with secrets)
+*.tfvars
+!*.tfvars.example
