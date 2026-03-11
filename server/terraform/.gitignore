@@ -7,3 +7,5 @@ terraform.tfstate.d/
 
 # Actual variable values — never commit
 terraform.tfvars
+origina.terraform.tfvars
+*.tfvars
