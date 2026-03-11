@@ -63,4 +63,4 @@ app.get('/links/', (req, res) => {
 
 app.use((req, res) => res.status(404).send('Not found'));
 
-app.listen(PORT, () => console.log(`http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Service started successfully on port ${PORT}`));

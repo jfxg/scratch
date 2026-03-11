@@ -14,4 +14,10 @@ services:
       - "traefik.http.routers.portfolio.entrypoints=https"
       - "traefik.http.routers.portfolio.tls.certresolver=letsencrypt"
       - "traefik.http.services.portfolio.loadbalancer.server.port=3000"
+    networks:
+      - carnahan
     restart: unless-stopped
+
+networks:
+  carnahan:
+    external: true
