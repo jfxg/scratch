@@ -4,9 +4,6 @@ services:
     image: ghcr.io/jfxg/portfolio:latest
     ports:
       - "10080:3000"
-    volumes:
-      - ./content:/app/content:ro
-      - ./data:/app/data:ro
     environment:
       PORT: 3000
     labels:

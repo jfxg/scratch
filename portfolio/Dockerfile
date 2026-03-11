@@ -6,11 +6,12 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
-# Copy application code
-# content/ and data/ are NOT copied — they come in via volume mounts
+# Copy everything
 COPY server.js ./
 COPY src/ ./src/
 COPY public/ ./public/
+COPY content/ ./content/
+COPY data/ ./data/
 
 EXPOSE 3000
 
