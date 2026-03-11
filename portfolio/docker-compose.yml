@@ -3,7 +3,7 @@ services:
     build: .
     image: ghcr.io/jfxg/portfolio:latest
     ports:
-      - "10080:3000"
+      - "3500:3000"
     environment:
       PORT: 3000
     labels:
