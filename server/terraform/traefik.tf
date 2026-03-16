@@ -5,7 +5,7 @@ locals {
 }
 
 resource "docker_image" "traefik" {
-  name         = "traefik:v3.1"
+  name         = "traefik:v3.6"
   keep_locally = true
 }
 
