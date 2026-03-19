@@ -144,8 +144,6 @@ if [[ ! -d "$HOME_DIR/bin" ]]; then
     fi
 fi
 check_dir "$REPO/bin" "$HOME_DIR/bin"
-check_file "$AGENT_SANDBOX_REPO/bin/agent"       "$HOME_DIR/bin/agent"
-check_file "$AGENT_SANDBOX_REPO/bin/agent-build" "$HOME_DIR/bin/agent-build"
 
 blue "-- PATH --"
 if grep -q '\$HOME/bin\|~/bin' "$HOME_DIR/.zshrc" 2>/dev/null; then
@@ -174,6 +172,9 @@ fi
 
 blue "-- Agent sandbox --"
 check_dir "$AGENT_SANDBOX_REPO/docker" "$HOME_DIR/.agent-sandbox/docker"
+check_file "$AGENT_SANDBOX_REPO/VERSION" "$HOME_DIR/.agent-sandbox/VERSION"
+check_file "$AGENT_SANDBOX_REPO/bin/agent"       "$HOME_DIR/bin/agent"
+check_file "$AGENT_SANDBOX_REPO/bin/agent-build" "$HOME_DIR/bin/agent-build"
 
 blue "-- oh-my-zsh custom themes --"
 check_dir "$REPO/shell/oh-my-zsh/custom/themes" "$HOME_DIR/.oh-my-zsh/custom/themes"
