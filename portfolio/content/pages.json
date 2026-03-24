@@ -1,0 +1,8 @@
+[
+  {
+    "title": "Example Project",
+    "description": "A short description shown on the homepage and pages listing.",
+    "content": "pages/example-project.md",
+    "thumbnail": "https://placecats.com/200/200"
+  }
+]

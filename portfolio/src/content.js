@@ -18,39 +18,30 @@ export function getLinks() {
   return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'links.json'), 'utf8'));
 }
 
-// ── Collection readers ────────────────────────────────────────
+// ── Pages collection ──────────────────────────────────────────
+// Defined in content/pages.json — array of { title, description, content, thumbnail }.
+// content is a path to a .md file relative to content/; slug is derived from its filename.
 
-function readCollection(subdir) {
-  const dir = path.join(CONTENT_DIR, subdir);
-  return fs.readdirSync(dir)
-    .filter(f => f.endsWith('.md'))
-    .map(f => {
-      const raw = fs.readFileSync(path.join(dir, f), 'utf8');
-      const { data, content } = matter(raw);
-      return {
-        slug: f.replace(/\.md$/, ''),
-        url:  `/${subdir}/${f.replace(/\.md$/, '')}/`,
-        data,
-        content,
-      };
-    })
-    .sort((a, b) => new Date(b.data.date) - new Date(a.data.date));
+function readPagesJson() {
+  return JSON.parse(fs.readFileSync(path.join(CONTENT_DIR, 'pages.json'), 'utf8'));
 }
 
-export const getProjects = () => readCollection('projects');
-export const getPosts    = () => readCollection('writing');
-
-// ── Single item readers ───────────────────────────────────────
-
-function readItem(subdir, slug) {
-  const file = path.join(CONTENT_DIR, subdir, `${slug}.md`);
-  if (!fs.existsSync(file)) return null;
-  const { data, content } = matter(fs.readFileSync(file, 'utf8'));
-  return { data, html: marked.parse(content) };
+export function getPages() {
+  return readPagesJson().map(data => {
+    const slug = path.basename(data.content, '.md');
+    return { slug, url: `/pages/${slug}/`, data };
+  });
 }
 
-export const getProject  = (slug) => readItem('projects', slug);
-export const getPost     = (slug) => readItem('writing', slug);
+export function getPage(slug) {
+  const data = readPagesJson().find(p => path.basename(p.content, '.md') === slug);
+  if (!data) return null;
+  const mdFile = path.join(CONTENT_DIR, data.content);
+  const html = fs.existsSync(mdFile)
+    ? marked.parse(fs.readFileSync(mdFile, 'utf8'))
+    : '';
+  return { data, html };
+}
 
 export function getUsesPage() {
   const { data, content } = matter(

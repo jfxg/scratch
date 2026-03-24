@@ -1,5 +1,5 @@
 [
-  { "label": "GitHub",   "url": "https://github.com/jfxg" },
-  { "label": "LinkedIn", "url": "https://linkedin.com/in/johngaquin" },
-  { "label": "Email",    "url": "mailto:john.gaquin@gmail.com" }
+  { "label": "GitHub",   "url": "https://github.com/jfxg",              "icon": "fa-brands fa-github" },
+  { "label": "LinkedIn", "url": "https://linkedin.com/in/johngaquin",   "icon": "fa-brands fa-linkedin" },
+  { "label": "Email",    "url": "mailto:john.gaquin@gmail.com",         "icon": "fa-solid fa-envelope" }
 ]

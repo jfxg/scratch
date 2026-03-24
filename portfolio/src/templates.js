@@ -8,6 +8,9 @@ function base({ site, links, title, description, body }) {
     : site.title;
 
   const navTitle = (!title || title === 'Home') ? site.title : title;
+  const navLink = (label, href) => label === title
+    ? `<span class="nav-current">${label}</span>`
+    : `<a href="${href}">${label}</a>`;
 
   const footerLinks = links
     .map((l, i) =>
@@ -24,25 +27,24 @@ function base({ site, links, title, description, body }) {
   <title>${pageTitle}</title>
   <meta name="description" content="${description || site.description}">
   <link rel="stylesheet" href="/css/pico.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/custom.css">
 </head>
 <body>
   <header class="container site-header">
     <nav>
-      <ul><li><strong class="nav-page-title">${navTitle}</strong></li></ul>
       <ul>
         <li>
-          <details class="dropdown">
-            <summary>Menu</summary>
-            <ul dir="rtl">
-              <li><a href="/" dir="ltr">Home</a></li>
-              <li><a href="/projects/" dir="ltr">Projects</a></li>
-              <li><a href="/writing/" dir="ltr">Writing</a></li>
-              <li><a href="/uses/" dir="ltr">Uses</a></li>
-              <li><a href="/links/" dir="ltr">Links</a></li>
-            </ul>
-          </details>
+          <a href="/" class="nav-brand">
+            <strong class="nav-page-title">${navTitle}</strong>
+            <small class="nav-tagline">${site.tagline}</small>
+          </a>
         </li>
+      </ul>
+      <ul class="nav-links">
+        <li>${navLink('Home', '/')}</li>
+        <li>${navLink('Pages', '/pages/')}</li>
+        <li>${navLink('Links', '/links/')}</li>
       </ul>
     </nav>
   </header>
@@ -61,7 +63,6 @@ export function page(ctx) {
     ...ctx,
     body: `<main class="container">
   <article>
-    <header><h1>${ctx.title}</h1></header>
     ${ctx.contentHtml}
   </article>
 </main>`,
@@ -86,10 +87,7 @@ export function post(ctx) {
     ...ctx,
     body: `<main class="container">
   <article class="post">
-    <header>
-      <h1>${ctx.title}</h1>
-      ${meta}
-    </header>
+    ${meta ? `<header>${meta}</header>` : ''}
     ${ctx.contentHtml}
   </article>
 </main>`,
@@ -98,20 +96,22 @@ export function post(ctx) {
 
 // ── Homepage dashboard ────────────────────────────────────────
 
-export function home({ site, links, projects, posts }) {
+export function home({ site, links, pages }) {
   const linkButtons = links
-    .map(l => `<a href="${l.url}" target="_blank" rel="noopener noreferrer" role="button" class="outline secondary">${l.label}</a>`)
+    .map(l => l.icon
+      ? `<a href="${l.url}" target="_blank" rel="noopener noreferrer" class="icon-btn" aria-label="${l.label}" title="${l.label}"><i class="${l.icon}" aria-hidden="true"></i></a>`
+      : `<a href="${l.url}" target="_blank" rel="noopener noreferrer" role="button" class="outline secondary">${l.label}</a>`)
     .join('\n      ');
 
-  function cards(items, urlFn) {
+  function cards(items) {
     if (!items.length) return '<p><em>Coming soon.</em></p>';
     return `<div class="card-grid">` +
       items.slice(0, 3).map(p => `
       <a href="${p.url}" class="card">
         <article>
           <h3>${p.data.title}</h3>
-          ${p.data.date ? `<p><small>${readableDate(p.data.date)}</small></p>` : ''}
-          <p>${p.data.summary || ''}</p>
+          ${p.data.thumbnail ? `<img src="${p.data.thumbnail}" alt="${p.data.title}" class="card-thumbnail">` : ''}
+          <p>${p.data.description || ''}</p>
         </article>
       </a>`).join('') +
       `</div>`;
@@ -122,8 +122,7 @@ export function home({ site, links, projects, posts }) {
     body: `<main class="container">
   <section class="intro">
     <div class="intro-text">
-      <h1>${site.title}</h1>
-      <p class="tagline">${site.tagline}</p>
+      <p class="tagline">${site.description}</p>
       <div class="intro-links">
         ${linkButtons}
       </div>
@@ -133,59 +132,34 @@ export function home({ site, links, projects, posts }) {
 
   <section class="dashboard-section">
     <div class="section-header">
-      <h2>Projects</h2><a href="/projects/">All projects &rarr;</a>
+      <h2>Pages</h2><a href="/pages/">All pages &rarr;</a>
     </div>
-    ${cards(projects)}
+    ${cards(pages)}
   </section>
 
-  <section class="dashboard-section">
-    <div class="section-header">
-      <h2>Writing</h2><a href="/writing/">All posts &rarr;</a>
-    </div>
-    ${cards(posts)}
-  </section>
 </main>`,
   });
 }
 
-// ── Projects index ────────────────────────────────────────────
+// ── Pages index ───────────────────────────────────────────────
 
-export function projectsIndex({ site, links, projects }) {
-  const cards = projects.length
+export function pagesIndex({ site, links, pages }) {
+  const cards = pages.length
     ? `<div class="card-grid">` +
-      projects.map(p => `
+      pages.map(p => `
     <a href="${p.url}" class="card">
       <article>
+        ${p.data.thumbnail ? `<img src="${p.data.thumbnail}" alt="${p.data.title}" class="card-thumbnail">` : ''}
         <h3>${p.data.title}</h3>
-        <p>${p.data.summary || ''}</p>
+        <p>${p.data.description || ''}</p>
       </article>
     </a>`).join('') +
       `</div>`
-    : '<p><em>Projects coming soon.</em></p>';
+    : '<p><em>Coming soon.</em></p>';
 
   return base({
-    site, links, title: 'Projects',
-    body: `<main class="container"><h1>Projects</h1>${cards}</main>`,
-  });
-}
-
-// ── Writing index ─────────────────────────────────────────────
-
-export function writingIndex({ site, links, posts }) {
-  const items = posts.length
-    ? `<ul>` +
-      posts.map(p => `
-    <li>
-      <a href="${p.url}">${p.data.title}</a>
-      ${p.data.date ? `<small> &mdash; ${readableDate(p.data.date)}</small>` : ''}
-      ${p.data.summary ? `<br><small>${p.data.summary}</small>` : ''}
-    </li>`).join('') +
-      `</ul>`
-    : '<p><em>Writing coming soon.</em></p>';
-
-  return base({
-    site, links, title: 'Writing',
-    body: `<main class="container"><h1>Writing</h1>${items}</main>`,
+    site, links, title: 'Pages',
+    body: `<main class="container">${cards}</main>`,
   });
 }
 
@@ -194,17 +168,17 @@ export function writingIndex({ site, links, posts }) {
 export function linksPage({ site, links }) {
   const items = links.map(l => `
     <li>
-      <a href="${l.url}" target="_blank" rel="noopener noreferrer">${l.label}</a>
-      ${l.note ? `<br><small>${l.note}</small>` : ''}
+      <a href="${l.url}" target="_blank" rel="noopener noreferrer" class="links-list-item">
+        ${l.icon ? `<i class="${l.icon}" aria-hidden="true"></i>` : ''}
+        <span>${l.label}</span>
+      </a>
+      ${l.note ? `<small>${l.note}</small>` : ''}
     </li>`).join('');
 
   return base({
     site, links, title: 'Links',
     body: `<main class="container">
-  <article>
-    <header><h1>Links</h1></header>
-    <ul class="links-list">${items}</ul>
-  </article>
+  <ul class="links-list">${items}</ul>
 </main>`,
   });
 }

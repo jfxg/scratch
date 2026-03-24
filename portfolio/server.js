@@ -29,30 +29,20 @@ const safeSlug = (s) => s.replace(/[^a-z0-9-_]/gi, '');
 app.get('/', (req, res) => {
   res.send(tmpl.home({
     ...ctx(),
-    projects: content.getProjects(),
-    posts:    content.getPosts(),
+    pages: content.getPages(),
   }));
 });
 
-app.get('/projects/', (req, res) => {
-  res.send(tmpl.projectsIndex({ ...ctx(), projects: content.getProjects() }));
+app.get('/pages/', (req, res) => {
+  res.send(tmpl.pagesIndex({ ...ctx(), pages: content.getPages() }));
 });
 
-app.get('/projects/:slug/', (req, res) => {
-  const item = content.getProject(safeSlug(req.params.slug));
+app.get('/pages/:slug/', (req, res) => {
+  const item = content.getPage(safeSlug(req.params.slug));
   if (!item) return res.status(404).send('Not found');
   res.send(tmpl.post({ ...ctx(), ...item.data, contentHtml: item.html }));
 });
 
-app.get('/writing/', (req, res) => {
-  res.send(tmpl.writingIndex({ ...ctx(), posts: content.getPosts() }));
-});
-
-app.get('/writing/:slug/', (req, res) => {
-  const item = content.getPost(safeSlug(req.params.slug));
-  if (!item) return res.status(404).send('Not found');
-  res.send(tmpl.post({ ...ctx(), ...item.data, contentHtml: item.html }));
-});
 
 app.get('/uses/', (req, res) => {
   const item = content.getUsesPage();
