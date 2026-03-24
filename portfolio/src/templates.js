@@ -7,6 +7,8 @@ function base({ site, links, title, description, body }) {
     ? `${title} — ${site.title}`
     : site.title;
 
+  const navTitle = (!title || title === 'Home') ? site.title : title;
+
   const footerLinks = links
     .map((l, i) =>
       `<a href="${l.url}" target="_blank" rel="noopener noreferrer">${l.label}</a>` +
@@ -15,7 +17,7 @@ function base({ site, links, title, description, body }) {
     .join('');
 
   return `<!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,19 +27,27 @@ function base({ site, links, title, description, body }) {
   <link rel="stylesheet" href="/css/custom.css">
 </head>
 <body>
-  <header class="container-fluid site-header">
+  <header class="container site-header">
     <nav>
-      <ul><li><a href="/" class="site-title">${site.title}</a></li></ul>
+      <ul><li><strong class="nav-page-title">${navTitle}</strong></li></ul>
       <ul>
-        <li><a href="/projects/">Projects</a></li>
-        <li><a href="/writing/">Writing</a></li>
-        <li><a href="/uses/">Uses</a></li>
-        <li><a href="/links/">Links</a></li>
+        <li>
+          <details class="dropdown">
+            <summary>Menu</summary>
+            <ul dir="rtl">
+              <li><a href="/" dir="ltr">Home</a></li>
+              <li><a href="/projects/" dir="ltr">Projects</a></li>
+              <li><a href="/writing/" dir="ltr">Writing</a></li>
+              <li><a href="/uses/" dir="ltr">Uses</a></li>
+              <li><a href="/links/" dir="ltr">Links</a></li>
+            </ul>
+          </details>
+        </li>
       </ul>
     </nav>
   </header>
   ${body}
-  <footer class="container-fluid site-footer">
+  <footer class="container site-footer">
     <small>${footerLinks}</small>
   </footer>
 </body>
@@ -111,11 +121,14 @@ export function home({ site, links, projects, posts }) {
     site, links, title: 'Home',
     body: `<main class="container">
   <section class="intro">
-    <h1>${site.title}</h1>
-    <p class="tagline">${site.tagline}</p>
-    <div class="intro-links">
-      ${linkButtons}
+    <div class="intro-text">
+      <h1>${site.title}</h1>
+      <p class="tagline">${site.tagline}</p>
+      <div class="intro-links">
+        ${linkButtons}
+      </div>
     </div>
+    ${site.avatar ? `<img src="${site.avatar}" alt="Profile picture" class="profile-pic">` : ''}
   </section>
 
   <section class="dashboard-section">

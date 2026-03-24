@@ -12,6 +12,8 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 // Pico CSS from node_modules, custom styles from public/
 app.use('/css', express.static(path.join(ROOT, 'node_modules/@picocss/pico/css')));
 app.use(express.static(path.join(ROOT, 'public')));
+// User images (avatar, project photos) — volume-mounted in Docker
+app.use('/images', express.static(path.join(ROOT, 'content/images')));
 
 // ── Shared context (re-read per request so edits take effect without restart) ─
 const ctx = () => ({
