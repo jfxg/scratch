@@ -11,19 +11,15 @@ function base({ site, links, title, description, body }) {
   const currentRoute = site.pages.find(r => r.title === title);
   const homeRoute = site.pages.find(r => r.path === '/') || site.pages[0];
   const activeTagline = (currentRoute || homeRoute).tagline;
+  const sep = `<span class="nav-sep">&rsaquo;</span>`;
   const navBrand = isHome
     ? site.title
-    : `${site.title} <span class="nav-sep">&rsaquo;</span> ${title}`;
+    : `${site.title} ${sep} ${title}`;
   const navLink = (route) => route.title === title
     ? `<span class="nav-current">${route.title}</span>`
     : `<a href="${route.path}">${route.title}</a>`;
 
-  const footerLinks = links
-    .map((l, i) =>
-      `<a href="${l.url}" target="_blank" rel="noopener noreferrer">${l.label}</a>` +
-      (i < links.length - 1 ? ' &middot; ' : '')
-    )
-    .join('');
+  const year = new Date().getFullYear();
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -39,7 +35,7 @@ function base({ site, links, title, description, body }) {
 <body>
   <header class="container site-header">
     <nav>
-      <ul>
+      <ul class="nav-brand-wrap">
         <li>
           <a href="/" class="nav-brand">
             <strong class="nav-page-title">${navBrand}</strong>
@@ -50,11 +46,21 @@ function base({ site, links, title, description, body }) {
       <ul class="nav-links">
         ${site.pages.map(r => `<li>${navLink(r)}</li>`).join('\n        ')}
       </ul>
+      <ul class="nav-hamburger">
+        <li>
+          <details class="dropdown">
+            <summary><i class="fa-solid fa-bars" aria-label="Menu"></i></summary>
+            <ul dir="rtl">
+              ${site.pages.map(r => `<li><a href="${r.path}" dir="ltr">${r.title}</a></li>`).join('\n              ')}
+            </ul>
+          </details>
+        </li>
+      </ul>
     </nav>
   </header>
   ${body}
   <footer class="container site-footer">
-    <small>${footerLinks}</small>
+    <small>&copy; ${year} ${site.title}</small>
   </footer>
 </body>
 </html>`;
