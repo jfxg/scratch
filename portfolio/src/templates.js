@@ -7,10 +7,16 @@ function base({ site, links, title, description, body }) {
     ? `${title} — ${site.title}`
     : site.title;
 
-  const navTitle = (!title || title === 'Home') ? site.title : title;
-  const navLink = (label, href) => label === title
-    ? `<span class="nav-current">${label}</span>`
-    : `<a href="${href}">${label}</a>`;
+  const isHome = !title || title === 'Home';
+  const currentRoute = site.pages.find(r => r.title === title);
+  const homeRoute = site.pages.find(r => r.path === '/') || site.pages[0];
+  const activeTagline = (currentRoute || homeRoute).tagline;
+  const navBrand = isHome
+    ? site.title
+    : `${site.title} <span class="nav-sep">&rsaquo;</span> ${title}`;
+  const navLink = (route) => route.title === title
+    ? `<span class="nav-current">${route.title}</span>`
+    : `<a href="${route.path}">${route.title}</a>`;
 
   const footerLinks = links
     .map((l, i) =>
@@ -36,15 +42,13 @@ function base({ site, links, title, description, body }) {
       <ul>
         <li>
           <a href="/" class="nav-brand">
-            <strong class="nav-page-title">${navTitle}</strong>
-            <small class="nav-tagline">${site.tagline}</small>
+            <strong class="nav-page-title">${navBrand}</strong>
+            <small class="nav-tagline">${activeTagline}</small>
           </a>
         </li>
       </ul>
       <ul class="nav-links">
-        <li>${navLink('Home', '/')}</li>
-        <li>${navLink('Pages', '/pages/')}</li>
-        <li>${navLink('Links', '/links/')}</li>
+        ${site.pages.map(r => `<li>${navLink(r)}</li>`).join('\n        ')}
       </ul>
     </nav>
   </header>
@@ -96,7 +100,7 @@ export function post(ctx) {
 
 // ── Homepage dashboard ────────────────────────────────────────
 
-export function home({ site, links, pages }) {
+export function home({ site, links, posts }) {
   const linkButtons = links
     .map(l => l.icon
       ? `<a href="${l.url}" target="_blank" rel="noopener noreferrer" class="icon-btn" aria-label="${l.label}" title="${l.label}"><i class="${l.icon}" aria-hidden="true"></i></a>`
@@ -132,21 +136,21 @@ export function home({ site, links, pages }) {
 
   <section class="dashboard-section">
     <div class="section-header">
-      <h2>Pages</h2><a href="/pages/">All pages &rarr;</a>
+      <h2>Posts</h2><a href="/posts/">All posts &rarr;</a>
     </div>
-    ${cards(pages)}
+    ${cards(posts)}
   </section>
 
 </main>`,
   });
 }
 
-// ── Pages index ───────────────────────────────────────────────
+// ── Posts index ───────────────────────────────────────────────
 
-export function pagesIndex({ site, links, pages }) {
-  const cards = pages.length
+export function postsIndex({ site, links, posts }) {
+  const cards = posts.length
     ? `<div class="card-grid">` +
-      pages.map(p => `
+      posts.map(p => `
     <a href="${p.url}" class="card">
       <article>
         ${p.data.thumbnail ? `<img src="${p.data.thumbnail}" alt="${p.data.title}" class="card-thumbnail">` : ''}
@@ -158,7 +162,7 @@ export function pagesIndex({ site, links, pages }) {
     : '<p><em>Coming soon.</em></p>';
 
   return base({
-    site, links, title: 'Pages',
+    site, links, title: 'Posts',
     body: `<main class="container">${cards}</main>`,
   });
 }

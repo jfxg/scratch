@@ -18,23 +18,23 @@ export function getLinks() {
   return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'links.json'), 'utf8'));
 }
 
-// ── Pages collection ──────────────────────────────────────────
-// Defined in content/pages.json — array of { title, description, content, thumbnail }.
+// ── Posts collection ──────────────────────────────────────────
+// Defined in content/posts.json — array of { title, description, content, thumbnail }.
 // content is a path to a .md file relative to content/; slug is derived from its filename.
 
-function readPagesJson() {
-  return JSON.parse(fs.readFileSync(path.join(CONTENT_DIR, 'pages.json'), 'utf8'));
+function readPostsJson() {
+  return JSON.parse(fs.readFileSync(path.join(CONTENT_DIR, 'posts.json'), 'utf8'));
 }
 
-export function getPages() {
-  return readPagesJson().map(data => {
+export function getPosts() {
+  return readPostsJson().map(data => {
     const slug = path.basename(data.content, '.md');
-    return { slug, url: `/pages/${slug}/`, data };
+    return { slug, url: `/posts/${slug}/`, data };
   });
 }
 
-export function getPage(slug) {
-  const data = readPagesJson().find(p => path.basename(p.content, '.md') === slug);
+export function getPost(slug) {
+  const data = readPostsJson().find(p => path.basename(p.content, '.md') === slug);
   if (!data) return null;
   const mdFile = path.join(CONTENT_DIR, data.content);
   const html = fs.existsSync(mdFile)
@@ -43,12 +43,13 @@ export function getPage(slug) {
   return { data, html };
 }
 
-export function getUsesPage() {
+export function getStaticPage(name) {
   const { data, content } = matter(
-    fs.readFileSync(path.join(CONTENT_DIR, 'uses.md'), 'utf8')
+    fs.readFileSync(path.join(CONTENT_DIR, `${name}.md`), 'utf8')
   );
   return { data, html: marked.parse(content) };
 }
+
 
 // ── Helpers ───────────────────────────────────────────────────
 

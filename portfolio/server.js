@@ -12,7 +12,7 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 // Pico CSS from node_modules, custom styles from public/
 app.use('/css', express.static(path.join(ROOT, 'node_modules/@picocss/pico/css')));
 app.use(express.static(path.join(ROOT, 'public')));
-// User images (avatar, project photos) — volume-mounted in Docker
+// User images (avatar, post thumbnails) — volume-mounted in Docker
 app.use('/images', express.static(path.join(ROOT, 'content/images')));
 
 // ── Shared context (re-read per request so edits take effect without restart) ─
@@ -29,25 +29,25 @@ const safeSlug = (s) => s.replace(/[^a-z0-9-_]/gi, '');
 app.get('/', (req, res) => {
   res.send(tmpl.home({
     ...ctx(),
-    pages: content.getPages(),
+    posts: content.getPosts(),
   }));
 });
 
-app.get('/pages/', (req, res) => {
-  res.send(tmpl.pagesIndex({ ...ctx(), pages: content.getPages() }));
+app.get('/posts/', (req, res) => {
+  res.send(tmpl.postsIndex({ ...ctx(), posts: content.getPosts() }));
 });
 
-app.get('/pages/:slug/', (req, res) => {
-  const item = content.getPage(safeSlug(req.params.slug));
+app.get('/posts/:slug/', (req, res) => {
+  const item = content.getPost(safeSlug(req.params.slug));
   if (!item) return res.status(404).send('Not found');
   res.send(tmpl.post({ ...ctx(), ...item.data, contentHtml: item.html }));
 });
 
-
-app.get('/uses/', (req, res) => {
-  const item = content.getUsesPage();
-  res.send(tmpl.page({ ...ctx(), title: item.data.title || 'Uses', contentHtml: item.html }));
+app.get('/experience/', (req, res) => {
+  const item = content.getStaticPage('experience');
+  res.send(tmpl.page({ ...ctx(), title: 'Experience', contentHtml: item.html }));
 });
+
 
 app.get('/links/', (req, res) => {
   res.send(tmpl.linksPage(ctx()));
