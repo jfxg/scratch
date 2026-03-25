@@ -12,8 +12,8 @@ terraform {
 locals {
   docker_host       = "ssh://${var.docker_user}@${var.server_domain}"
   docker_ssh_target = "${var.docker_user}@${var.server_domain}"
-  portainer_domain  = "portainer.${var.server_domain}"
-  traefik_domain    = "traefik.${var.server_domain}"
+  portainer_domain  = "portainer-${var.server_domain}"
+  traefik_domain    = "traefik-${var.server_domain}"
 }
 
 provider "docker" {

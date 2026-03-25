@@ -17,8 +17,8 @@ Once deployed, any Docker container on the server can be routed through Traefik 
 Service subdomains are derived from `server_domain` automatically:
 
 ```
-portainer.<server_domain>   →  Portainer UI
-traefik.<server_domain>     →  Traefik dashboard
+portainer-<server_domain>   →  Portainer UI
+traefik-<server_domain>     →  Traefik dashboard
 ```
 
 ## Directory layout
@@ -92,7 +92,7 @@ make destroy ENV=home
 3. Upload `traefik/traefik.yml` and `traefik/dynamic.yml` to the server
 4. Create the `traefik` network, named volumes, and start both containers
 
-After a successful deploy, Portainer is available at `https://portainer.<server_domain>`.
+After a successful deploy, Portainer is available at `https://portainer-<server_domain>`.
 
 ### Multiple servers
 
@@ -119,7 +119,7 @@ services:
       - traefik
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.myapp.rule=Host(`myapp.home.example.com`)"
+      - "traefik.http.routers.myapp.rule=Host(`app.example.com`)"
       - "traefik.http.routers.myapp.entrypoints=https"
       - "traefik.http.routers.myapp.tls.certresolver=letsencrypt"
       - "traefik.http.services.myapp.loadbalancer.server.port=8080"
@@ -129,7 +129,7 @@ networks:
     external: true
 ```
 
-Traefik picks up new containers automatically — no restart required.
+Traefik picks up new containers automatically — no restart required. As long as the domain DNS is managed by the same Cloudflare credentials, Traefik will automatically generate appropriate certs for the app domain.
 
 ## Adding routes for non-Docker services
 
@@ -176,4 +176,4 @@ Key settings:
 - TLS certificates via Let's Encrypt DNS-01 using Cloudflare
 - Docker provider watches the `traefik` network; containers must opt in with `traefik.enable=true`
 - File provider watches `/dynamic/` for live route updates (`dynamic.yml`)
-- Dashboard enabled at `traefik.<server_domain>` (HTTPS, requires auth if you want to restrict access)
+- Dashboard enabled at `traefik-<server_domain>` (HTTPS, requires auth if you want to restrict access)
