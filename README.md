@@ -10,7 +10,7 @@ shell/                      Zsh config and Oh My Zsh customisations
 git/                        Git global config and ignore rules
 ssh/                        SSH client config
 vim/                        Vim config
-portfolio/                  Static portfolio website (11ty + Pico CSS)
+portfolio/                  Moved → github.com/jfxg/portfolio
 ```
 
 ## Scripts
@@ -57,15 +57,7 @@ sync-shell-remote --apply user@host  # sync to remote
 
 ## Portfolio
 
-Static portfolio website with a dashboard homepage, project deep-dives, and a writing/blog section. Served by a lightweight Express.js server, deployed via Docker. See [`portfolio/README.md`](portfolio/README.md) for full usage.
-
-```bash
-cd portfolio
-npm install && npm run dev   # dev server → http://localhost:3000
-docker compose up --build   # or run in Docker (mirrors production)
-```
-
-Content lives in `portfolio/content/` as Markdown files. Volume-mounted in Docker so edits are live without a rebuild.
+The portfolio project has moved to its own repository: [jfxg/portfolio](https://github.com/jfxg/portfolio).
 
 ## Agent sandbox
 
