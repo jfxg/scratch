@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""
+Update a Cloudflare DNS A record with your current public IP address.
+
+Usage:
+    update_cloudflare --zone=<zone_id> --record=<record_name> [--ttl=<seconds>] [--token=<api_token>]
+
+Requires the 'requests' library: pip install requests
+"""
+
+import argparse
+import ipaddress
+import json
+import logging
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+try:
+    import requests
+except ImportError:
+    print("Error: 'requests' library is required. Install it with: pip install requests", file=sys.stderr)
+    sys.exit(1)
+
+CLOUDFLARE_API = "https://api.cloudflare.com/client/v4"
+LOG_DIR = Path.home() / ".ddns"
+IP_SERVICES = [
+    "https://api.ipify.org",
+    "https://icanhazip.com",
+    "https://ifconfig.me/ip",
+]
+
+
+def setup_logging(log_file: Path) -> logging.Logger:
+    log = logging.getLogger("update_cloudflare")
+    log.setLevel(logging.DEBUG)
+    fmt = logging.Formatter("%(asctime)s : %(message)s", datefmt="%Y-%m-%dT%H:%M:%S%z")
+    fh = logging.FileHandler(log_file)
+    fh.setFormatter(fmt)
+    log.addHandler(fh)
+    ch = logging.StreamHandler()
+    ch.setFormatter(fmt)
+    log.addHandler(ch)
+    return log
+
+
+def get_public_ip() -> str:
+    for url in IP_SERVICES:
+        try:
+            resp = requests.get(url, timeout=5)
+            resp.raise_for_status()
+            return resp.text.strip()
+        except requests.RequestException:
+            continue
+    raise RuntimeError("Could not determine public IP from any service")
+
+
+def validate_ip(ip: str) -> bool:
+    try:
+        ipaddress.IPv4Address(ip)
+        return True
+    except ValueError:
+        return False
+
+
+def cf_headers(token: str) -> dict:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+
+def get_dns_record(token: str, zone_id: str, record_name: str, record_type: str) -> dict | None:
+    """Return the existing DNS record dict, or None if not found."""
+    resp = requests.get(
+        f"{CLOUDFLARE_API}/zones/{zone_id}/dns_records",
+        headers=cf_headers(token),
+        params={"type": record_type, "name": record_name},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if not data["success"]:
+        raise RuntimeError(f"Cloudflare API error: {data['errors']}")
+    records = data["result"]
+    return records[0] if records else None
+
+
+def upsert_dns_record(
+    token: str, zone_id: str, record_name: str, record_type: str, ip: str, ttl: int, record_id: str | None
+) -> None:
+    payload = {"type": record_type, "name": record_name, "content": ip, "ttl": ttl}
+    if record_id:
+        resp = requests.put(
+            f"{CLOUDFLARE_API}/zones/{zone_id}/dns_records/{record_id}",
+            headers=cf_headers(token),
+            json=payload,
+            timeout=10,
+        )
+    else:
+        resp = requests.post(
+            f"{CLOUDFLARE_API}/zones/{zone_id}/dns_records",
+            headers=cf_headers(token),
+            json=payload,
+            timeout=10,
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    if not data["success"]:
+        raise RuntimeError(f"Cloudflare API error: {data['errors']}")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Update a Cloudflare DNS A record with your current public IP address.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--zone", required=True, help="Cloudflare zone ID (e.g. abc123def456)")
+    parser.add_argument("--record", required=True, help="DNS record name to update (e.g. home.example.com)")
+    parser.add_argument("--ttl", type=int, default=300, help="TTL in seconds (default: 300; use 1 for auto)")
+    parser.add_argument("--type", dest="record_type", default="A", choices=["A", "AAAA"], help="Record type (default: A)")
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("CLOUDFLARE_API_TOKEN"),
+        help="Cloudflare API token (or set CLOUDFLARE_API_TOKEN env var)",
+    )
+    args = parser.parse_args()
+    if not args.token:
+        parser.error("Cloudflare API token required via --token or CLOUDFLARE_API_TOKEN env var")
+    return args
+
+
+def main() -> None:
+    args = parse_args()
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = LOG_DIR / "update-cloudflare.log"
+    LOG_DIR.joinpath("last.run").touch()
+    log = setup_logging(log_file)
+
+    # Get current public IP
+    try:
+        ip = get_public_ip()
+    except RuntimeError as e:
+        log.error(str(e))
+        sys.exit(1)
+
+    if not validate_ip(ip):
+        log.error("Invalid IP address: %s", ip)
+        sys.exit(1)
+
+    # Fetch existing Cloudflare record
+    try:
+        record = get_dns_record(args.token, args.zone, args.record, args.record_type)
+    except requests.RequestException as e:
+        log.error("Failed to query Cloudflare: %s", e)
+        sys.exit(1)
+
+    current_cf_ip = record["content"] if record else None
+
+    if ip == current_cf_ip:
+        # IP unchanged — exit silently
+        sys.exit(0)
+
+    log.info(
+        "IP has changed! Current public IP = %s, Cloudflare %s = %s",
+        ip,
+        args.record,
+        current_cf_ip or "(no record)",
+    )
+
+    # Update or create the record
+    try:
+        upsert_dns_record(
+            args.token,
+            args.zone,
+            args.record,
+            args.record_type,
+            ip,
+            args.ttl,
+            record["id"] if record else None,
+        )
+    except requests.RequestException as e:
+        log.error("Failed to update Cloudflare record: %s", e)
+        sys.exit(1)
+
+    log.info("%s has been updated to %s", args.record, ip)
+
+
+if __name__ == "__main__":
+    main()
