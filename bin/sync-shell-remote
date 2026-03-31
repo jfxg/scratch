@@ -173,9 +173,27 @@ echo ""
 
 # ── Shell configs ─────────────────────────────────────────────────────────────
 blue "-- Shell --"
-check_file "$HOME_DIR/.zshrc"    "~/.zshrc"
 check_file "$HOME_DIR/.zprofile" "~/.zprofile"
+check_file "$HOME_DIR/.zshrc"    "~/.zshrc"
 dim "  skip     ~/.zshrc.local (machine-specific, intentionally not synced)"
+
+# ── bin scripts ───────────────────────────────────────────────────────────────
+blue "-- bin --"
+check_file "$HOME_DIR/bin/update_cloudflare" "~/bin/update_cloudflare"
+
+# ── remote ~/.zshrc.local tweaks ──────────────────────────────────────────────
+blue "-- remote ~/.zshrc.local --"
+if ssh "${SSH_OPTS[@]}" "$HOST" "grep -q 'HOME/bin\|~/bin' ~/.zshrc.local 2>/dev/null"; then
+    green "  ok       ~/bin already in remote ~/.zshrc.local"
+else
+    yellow "  MISSING  ~/bin not found in remote ~/.zshrc.local"
+    CHANGES=$((CHANGES + 1))
+    if [[ "$DRY_RUN" == false ]]; then
+        ssh "${SSH_OPTS[@]}" "$HOST" \
+            'echo "\n# Added by sync-shell-remote\nexport PATH=\"\$HOME/bin:\$PATH\"" >> ~/.zshrc.local'
+        green "           → added ~/bin to PATH in remote ~/.zshrc.local"
+    fi
+fi
 
 # ── oh-my-zsh custom theme ────────────────────────────────────────────────────
 blue "-- oh-my-zsh custom theme --"
