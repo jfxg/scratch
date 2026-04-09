@@ -7,8 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # DOTFILES_REPO env var overrides the default (parent of script dir).
 # Needed when running from ~/bin where the parent is $HOME, not the repo.
 REPO="${DOTFILES_REPO:-$(dirname "$SCRIPT_DIR")}"
-AGENT_SANDBOX_REPO="${AGENT_SANDBOX_REPO:-$HOME/projects/agent-sandbox}"
 HOME_DIR="$HOME"
+
+AGENT_REPO="jfxg/agent-sandbox"
+AGENT_RAW="https://raw.githubusercontent.com/$AGENT_REPO/main"
+AGENT_VERSION_FILE="$HOME_DIR/.agent-sandbox/VERSION"
+AGENT_SANDBOX_REPO="${AGENT_SANDBOX_REPO:-}"  # optional local override
 DRY_RUN=true
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
@@ -121,17 +125,38 @@ blue "-- Shell --"
 check_file "$REPO/shell/.zshrc"    "$HOME_DIR/.zshrc"
 check_file "$REPO/shell/.zprofile" "$HOME_DIR/.zprofile"
 
-blue "-- Agent sandbox repo --"
-if [[ ! -d "$AGENT_SANDBOX_REPO/.git" ]]; then
-    yellow "  MISSING  $AGENT_SANDBOX_REPO (jfxg/agent-sandbox not cloned)"
-    CHANGES=$((CHANGES + 1))
-    if [[ "$DRY_RUN" == false ]]; then
-        mkdir -p "$(dirname "$AGENT_SANDBOX_REPO")"
-        git clone https://github.com/jfxg/agent-sandbox.git "$AGENT_SANDBOX_REPO"
-        green "           → cloned jfxg/agent-sandbox"
-    fi
+blue "-- Agent sandbox --"
+if [[ -n "$AGENT_SANDBOX_REPO" ]]; then
+    # Local repo override: copy files directly (dev/dogfood path)
+    dim "  (local override: $AGENT_SANDBOX_REPO)"
+    check_dir  "$AGENT_SANDBOX_REPO/docker" "$HOME_DIR/.agent-sandbox/docker"
+    check_file "$AGENT_SANDBOX_REPO/VERSION"          "$HOME_DIR/.agent-sandbox/VERSION"
+    check_file "$AGENT_SANDBOX_REPO/bin/agent"        "$HOME_DIR/bin/agent"
+    check_file "$AGENT_SANDBOX_REPO/bin/agent-build"  "$HOME_DIR/bin/agent-build"
 else
-    green "  ok       $AGENT_SANDBOX_REPO"
+    # Default: version-check against GitHub, install via install.sh if needed
+    _local_ver=""
+    _remote_ver=""
+    [[ -f "$AGENT_VERSION_FILE" ]] && _local_ver="$(tr -d '[:space:]' < "$AGENT_VERSION_FILE")"
+    _remote_ver="$(curl -fsSL --max-time 5 "$AGENT_RAW/VERSION" 2>/dev/null | tr -d '[:space:]')" || true
+
+    if [[ -z "$_local_ver" ]]; then
+        yellow "  MISSING  agent-sandbox (not installed)"
+        CHANGES=$((CHANGES + 1))
+        if [[ "$DRY_RUN" == false ]]; then
+            curl -fsSL "$AGENT_RAW/install.sh" | bash
+            green "           → installed via install.sh"
+        fi
+    elif [[ -n "$_remote_ver" && "$_local_ver" != "$_remote_ver" ]]; then
+        yellow "  CHANGED  agent-sandbox $_local_ver → $_remote_ver"
+        CHANGES=$((CHANGES + 1))
+        if [[ "$DRY_RUN" == false ]]; then
+            curl -fsSL "$AGENT_RAW/install.sh" | bash
+            green "           → updated to $_remote_ver"
+        fi
+    else
+        green "  ok       agent-sandbox ${_local_ver}"
+    fi
 fi
 
 blue "-- ~/bin scripts --"
@@ -169,12 +194,6 @@ else
         green "           → added to ~/.zshrc.local"
     fi
 fi
-
-blue "-- Agent sandbox --"
-check_dir "$AGENT_SANDBOX_REPO/docker" "$HOME_DIR/.agent-sandbox/docker"
-check_file "$AGENT_SANDBOX_REPO/VERSION" "$HOME_DIR/.agent-sandbox/VERSION"
-check_file "$AGENT_SANDBOX_REPO/bin/agent"       "$HOME_DIR/bin/agent"
-check_file "$AGENT_SANDBOX_REPO/bin/agent-build" "$HOME_DIR/bin/agent-build"
 
 blue "-- oh-my-zsh custom themes --"
 check_dir "$REPO/shell/oh-my-zsh/custom/themes" "$HOME_DIR/.oh-my-zsh/custom/themes"
